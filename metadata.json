@@ -1,0 +1,6 @@
+{
+  "name": "GrindStack",
+  "description": "Personal + social productivity tracker for tech, health, and discipline",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

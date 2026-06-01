@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "118291616225",
+    "project_id": "grindstack-3fadb",
+    "storage_bucket": "grindstack-3fadb.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:118291616225:android:f784f9ffbce5e13e9d42a0",
+        "android_client_info": {
+          "package_name": "com.aistudio.grindstack.xplqrs"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "118291616225-o6fscs62ag6ntr71v6btba98qq4c1mev.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.aistudio.grindstack.xplqrs",
+            "certificate_hash": "e3299edfcdaba815564c9c074ddf9e697270bd19"
+          }
+        },
+        {
+          "client_id": "118291616225-7gmok962l08h7fcuoifdb5q54013anf7.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDUdL73H8z_UeKn_H61t1gWMm44zcf-7dE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "118291616225-7gmok962l08h7fcuoifdb5q54013anf7.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

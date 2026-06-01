@@ -1,0 +1,18 @@
+{
+  "short_name": "GrindStack",
+  "name": "GrindStack - Daily Habit & Routine Tracker",
+  "description": "Reclaim your life, step by step. Track habits, routines, academy study, wellbeing, and squad tribes.",
+  "start_url": "/",
+  "background_color": "#111008",
+  "theme_color": "#111008",
+  "display": "standalone",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
