@@ -661,9 +661,7 @@ img, svg {
   width: 90%;
   max-width: 420px;
   border-radius: var(--radius-full);
-  backdrop-filter: blur(32px);
-  -webkit-backdrop-filter: blur(32px);
-  background: var(--glass-fill);
+  background: #0d0d0f;
   border: 1px solid var(--glass-border-nav);
   box-shadow: var(--shadow-float);
   padding: 12px 24px;
