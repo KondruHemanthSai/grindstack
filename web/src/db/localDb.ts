@@ -1,5 +1,7 @@
-import { auth, db } from "../firebase/config";
+import { auth, db, rtdb } from "../firebase/config";
 import { doc, getDoc, setDoc, collection, getDocs, deleteDoc } from "firebase/firestore";
+import { ref, get, set, remove } from "firebase/database";
+
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // TYPE DEFINITIONS
@@ -359,92 +361,93 @@ export const localDb = {
       return { ...mem.profile };
     }
 
-    // ── Authenticated user: fetch everything from Firestore in parallel ──
+    // ── Authenticated user: fetch everything from Realtime DB + Firestore in parallel ──
     try {
-      const [profileSnap, tasksSnap, snapsSnap, sleepSnap, techSnap, focusSnap, achSnap] = await Promise.all([
-        getDoc(doc(db, "users", userId)),
-        getDocs(collection(db, "users", userId, "taskConfigs")),
-        getDocs(collection(db, "users", userId, "snapshots")),
-        getDocs(collection(db, "users", userId, "sleepLogs")),
-        getDocs(collection(db, "users", userId, "techLogs")),
-        getDocs(collection(db, "users", userId, "focusSessions")),
-        getDocs(collection(db, "users", userId, "achievements")),
+      const [rtdbProfileSnap, rtdbTasksSnap, rtdbSnapsSnap, rtdbSleepSnap, rtdbTechSnap, rtdbFocusSnap, rtdbAchSnap] = await Promise.all([
+        get(ref(rtdb, `users/${userId}/profile`)).catch(() => null),
+        get(ref(rtdb, `users/${userId}/taskConfigs`)).catch(() => null),
+        get(ref(rtdb, `users/${userId}/snapshots`)).catch(() => null),
+        get(ref(rtdb, `users/${userId}/sleepLogs`)).catch(() => null),
+        get(ref(rtdb, `users/${userId}/techLogs`)).catch(() => null),
+        get(ref(rtdb, `users/${userId}/focusSessions`)).catch(() => null),
+        get(ref(rtdb, `users/${userId}/achievements`)).catch(() => null),
       ]);
 
-      // Profile initialization
-      const profileData = profileSnap.exists() ? profileSnap.data() : null;
+      const [fsProfileSnap, fsTasksSnap] = await Promise.all([
+        getDoc(doc(db, "users", userId)).catch(() => null),
+        getDocs(collection(db, "users", userId, "taskConfigs")).catch(() => null),
+      ]);
 
+      const rtdbHasProfile = rtdbProfileSnap && rtdbProfileSnap.exists();
+      const fsHasProfile = fsProfileSnap && fsProfileSnap.exists();
+      const userExists = rtdbHasProfile || fsHasProfile;
 
-      // Profile initialization
-      if (profileSnap.exists()) {
-        const d = profileData!;
-        mem.profile = {
-          username: d.username || auth.currentUser?.displayName || "Grinder",
-          profilePic: d.profilePic || d.profilePhoto || "avatar_1",
-          xp: d.xp ?? 20,
-          longestStreak: d.longestStreak ?? 0,
-          currentStreak: d.streak ?? d.currentStreak ?? 0,
-          currentGroupId: d.currentGroupId ?? null,
-          currentGroupName: d.currentGroupName ?? null,
-          totalTasksCompletedAllTime: d.totalTasksCompletedAllTime ?? 0,
-          badgeCount: d.badgeCount ?? 0,
-          lastResetDateString: d.lastResetDateString || getTodayDateString(),
-          routineStreak: d.routineStreak ?? 0,
-          graceDaysAllowedThisWeek: d.graceDaysAllowedThisWeek ?? 2,
-          graceDaysUsedThisWeek: d.graceDaysUsedThisWeek ?? 0,
-          level: d.level ?? 1,
-          disciplineScore: d.disciplineScore ?? 0,
-        };
+      // 1. Profile initialization
+      if (rtdbHasProfile) {
+        const d = rtdbProfileSnap.val();
+        mem.profile = { ...makeDefaultProfile(auth.currentUser?.displayName), ...d };
+      } else if (fsHasProfile) {
+        const d = fsProfileSnap.data();
+        mem.profile = { ...makeDefaultProfile(auth.currentUser?.displayName), ...d };
       } else {
-        // Brand-new user
         mem.profile = makeDefaultProfile(auth.currentUser?.displayName);
+        fsWrite(set(ref(rtdb, `users/${userId}/profile`), { ...mem.profile, seeded: true, lastSyncTime: Date.now() }));
         fsWrite(setDoc(doc(db, "users", userId), { ...mem.profile, seeded: true, lastSyncTime: Date.now() }));
       }
 
-      // Task configs — seed defaults ONLY on first login ever when user profile doc does not exist yet
-      if (!tasksSnap.empty) {
-        const configs: TaskConfig[] = [];
-        tasksSnap.forEach(d => configs.push(d.data() as TaskConfig));
+      // 2. Task configs initialization
+      const rtdbHasTasks = rtdbTasksSnap && rtdbTasksSnap.exists();
+      const fsHasTasks = fsTasksSnap && !fsTasksSnap.empty;
+
+      if (rtdbHasTasks) {
+        const val = rtdbTasksSnap.val();
+        const configs: TaskConfig[] = Object.values(val);
         mem.taskConfigs = configs.sort((a, b) => a.order - b.order);
-      } else if (!profileSnap.exists()) {
-        // First-time user seed
+      } else if (fsHasTasks) {
+        const configs: TaskConfig[] = [];
+        fsTasksSnap.forEach(d => configs.push(d.data() as TaskConfig));
+        mem.taskConfigs = configs.sort((a, b) => a.order - b.order);
+      } else if (!userExists) {
+        // Brand-new user: seed default tasks once into both databases
         mem.taskConfigs = [...DEFAULT_TASK_CONFIGS];
         for (const cfg of DEFAULT_TASK_CONFIGS) {
+          fsWrite(set(ref(rtdb, `users/${userId}/taskConfigs/${cfg.id}`), cfg));
           fsWrite(setDoc(doc(db, "users", userId, "taskConfigs", cfg.id), cfg));
         }
       } else {
-        // Existing user who deleted all tasks
+        // Existing user who has deleted all tasks
         mem.taskConfigs = [];
       }
 
-
-      // Daily snapshots
-      if (!snapsSnap.empty) {
-        snapsSnap.forEach(d => { mem.snapshots[d.id] = d.data() as DailySnapshot; });
+      // 3. Daily snapshots
+      if (rtdbSnapsSnap && rtdbSnapsSnap.exists()) {
+        mem.snapshots = rtdbSnapsSnap.val() || {};
       }
 
-      // Sleep logs
-      if (!sleepSnap.empty) {
-        sleepSnap.forEach(d => mem.sleepLogs.push(d.data() as SleepLog));
+      // 4. Sleep logs
+      if (rtdbSleepSnap && rtdbSleepSnap.exists()) {
+        mem.sleepLogs = Object.values(rtdbSleepSnap.val() || {}) as SleepLog[];
       }
 
-      // Tech logs
-      if (!techSnap.empty) {
-        techSnap.forEach(d => mem.techLogs.push(d.data() as TechLog));
-        mem.techLogs.sort((a, b) => b.dateString.localeCompare(a.dateString));
+      // 5. Tech logs
+      if (rtdbTechSnap && rtdbTechSnap.exists()) {
+        const logs = Object.values(rtdbTechSnap.val() || {}) as TechLog[];
+        mem.techLogs = logs.sort((a, b) => b.dateString.localeCompare(a.dateString));
       }
 
-      // Focus sessions
-      if (!focusSnap.empty) {
-        focusSnap.forEach(d => mem.focusSessions.push(d.data() as FocusSession));
+      // 6. Focus sessions
+      if (rtdbFocusSnap && rtdbFocusSnap.exists()) {
+        mem.focusSessions = Object.values(rtdbFocusSnap.val() || {}) as FocusSession[];
       }
 
-      // Achievements
-      if (!achSnap.empty) {
-        achSnap.forEach(d => mem.achievements.push(d.data() as Achievement));
+      // 7. Achievements
+      if (rtdbAchSnap && rtdbAchSnap.exists()) {
+        mem.achievements = Object.values(rtdbAchSnap.val() || {}) as Achievement[];
       } else {
         mem.achievements = [...DEFAULT_ACHIEVEMENTS];
       }
+
+
 
 
     } catch (e) {
@@ -491,11 +494,13 @@ export const localDb = {
     mem.profile = { ...profile };
     const u = uid();
     if (isAuth() && u) {
+      fsWrite(set(ref(rtdb, `users/${u}/profile`), { ...profile, lastSyncTime: Date.now() }));
       fsWrite(setDoc(doc(db, "users", u), { ...profile, lastSyncTime: Date.now() }, { merge: true }));
     } else if (mem.isGuest) {
       try { localStorage.setItem(KEYS.PROFILE, JSON.stringify(profile)); } catch {}
     }
   },
+
 
   // ── TASK CONFIGS (CRUD) ─────────────────
 
@@ -508,12 +513,14 @@ export const localDb = {
     const u = uid();
     if (isAuth() && u) {
       for (const cfg of configs) {
+        fsWrite(set(ref(rtdb, `users/${u}/taskConfigs/${cfg.id}`), cfg));
         fsWrite(setDoc(doc(db, "users", u, "taskConfigs", cfg.id), cfg));
       }
     } else if (mem.isGuest) {
       try { localStorage.setItem(KEYS.TASK_CONFIGS, JSON.stringify(configs)); } catch {}
     }
   },
+
 
   getActiveTaskConfigs(): TaskConfig[] {
     return mem.taskConfigs.filter(t => !t.archived && t.enabled).sort((a, b) => a.order - b.order);
@@ -564,9 +571,10 @@ export const localDb = {
     // 1. Remove from memory cache
     mem.taskConfigs = mem.taskConfigs.filter(t => t.id !== taskId);
 
-    // 2. Remove from Firestore (auth) or localStorage (guest)
+    // 2. Remove from Realtime DB + Firestore (auth) or localStorage (guest)
     const u = uid();
     if (isAuth() && u) {
+      fsWrite(remove(ref(rtdb, `users/${u}/taskConfigs/${taskId}`)));
       fsWrite(deleteDoc(doc(db, "users", u, "taskConfigs", taskId)));
     } else if (mem.isGuest) {
       try {
@@ -574,6 +582,7 @@ export const localDb = {
         localStorage.setItem("gs3_seeded", "true");
       } catch {}
     }
+
 
 
     // 3. Clean up today's snapshot so stats and checklist update immediately
@@ -699,11 +708,13 @@ export const localDb = {
     mem.snapshots[dateString] = snapshot;
     const u = uid();
     if (isAuth() && u) {
+      fsWrite(set(ref(rtdb, `users/${u}/snapshots/${dateString}`), snapshot));
       fsWrite(setDoc(doc(db, "users", u, "snapshots", dateString), snapshot));
     } else if (mem.isGuest) {
       try { localStorage.setItem(KEYS.DAILY_SNAPSHOTS, JSON.stringify(mem.snapshots)); } catch {}
     }
   },
+
 
   saveSnapshotReflection(dateString: string, mood: string, notes: string) {
     const snapshot = this.getSnapshotForDate(dateString);
@@ -866,10 +877,12 @@ export const localDb = {
     }
     const u = uid();
     if (isAuth() && u) {
+      fsWrite(set(ref(rtdb, `users/${u}/focusSessions/${session.id}`), session));
       fsWrite(setDoc(doc(db, "users", u, "focusSessions", session.id), session));
     }
     return session;
   },
+
 
   endFocusSession(sessionId: string): FocusSession | null {
     const session = mem.focusSessions.find(s => s.id === sessionId);
@@ -887,8 +900,10 @@ export const localDb = {
     }
     const u = uid();
     if (isAuth() && u) {
+      fsWrite(set(ref(rtdb, `users/${u}/focusSessions/${session.id}`), session));
       fsWrite(setDoc(doc(db, "users", u, "focusSessions", session.id), session));
     }
+
 
     // Update today's snapshot focus minutes
     const todayStr = getTodayDateString();
@@ -951,8 +966,10 @@ export const localDb = {
     }
     const u = uid();
     if (isAuth() && u) {
+      fsWrite(set(ref(rtdb, `users/${u}/sleepLogs/${dateString}`), log));
       fsWrite(setDoc(doc(db, "users", u, "sleepLogs", dateString), log));
     }
+
 
     // Update snapshot
     const snapshot = this.getSnapshotForDate(dateString);
@@ -992,8 +1009,10 @@ export const localDb = {
     }
     const u = uid();
     if (isAuth() && u) {
+      fsWrite(set(ref(rtdb, `users/${u}/techLogs/${newLog.id}`), newLog));
       fsWrite(setDoc(doc(db, "users", u, "techLogs", newLog.id), newLog));
     }
+
 
     // Update snapshot XP for the target date
     const snapshot = this.getSnapshotForDate(dateString);
@@ -1018,12 +1037,14 @@ export const localDb = {
     const u = uid();
     if (isAuth() && u) {
       for (const ach of achievements) {
+        fsWrite(set(ref(rtdb, `users/${u}/achievements/${ach.id}`), ach));
         fsWrite(setDoc(doc(db, "users", u, "achievements", ach.id), ach));
       }
     } else if (mem.isGuest) {
       try { localStorage.setItem(KEYS.ACHIEVEMENTS, JSON.stringify(achievements)); } catch {}
     }
   },
+
 
   checkAndUnlockAchievements(): Achievement[] {
     const achievements = this.getAchievements();
