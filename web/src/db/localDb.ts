@@ -416,6 +416,35 @@ export const localDb = {
         mem.taskConfigs = [];
       }
 
+      // Daily snapshots
+      if (!snapsSnap.empty) {
+        snapsSnap.forEach(d => { mem.snapshots[d.id] = d.data() as DailySnapshot; });
+      }
+
+      // Sleep logs
+      if (!sleepSnap.empty) {
+        sleepSnap.forEach(d => mem.sleepLogs.push(d.data() as SleepLog));
+      }
+
+      // Tech logs
+      if (!techSnap.empty) {
+        techSnap.forEach(d => mem.techLogs.push(d.data() as TechLog));
+        mem.techLogs.sort((a, b) => b.dateString.localeCompare(a.dateString));
+      }
+
+      // Focus sessions
+      if (!focusSnap.empty) {
+        focusSnap.forEach(d => mem.focusSessions.push(d.data() as FocusSession));
+      }
+
+      // Achievements
+      if (!achSnap.empty) {
+        achSnap.forEach(d => mem.achievements.push(d.data() as Achievement));
+      } else {
+        mem.achievements = [...DEFAULT_ACHIEVEMENTS];
+      }
+
+
     } catch (e) {
       console.error("[Grindstack] Firestore init failed, using defaults:", e);
       if (!mem.profile) mem.profile = makeDefaultProfile(auth.currentUser?.displayName);
