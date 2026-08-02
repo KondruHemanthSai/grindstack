@@ -328,11 +328,16 @@ export const localDb = {
 
     if (mem.isGuest) {
       // Guest: load from localStorage into cache
+      const isSeededLocal = localStorage.getItem("gs3_seeded") === "true";
       try { mem.taskConfigs = JSON.parse(localStorage.getItem(KEYS.TASK_CONFIGS) || "[]"); } catch {}
-      if (!mem.taskConfigs.length) {
+      if (!mem.taskConfigs.length && !isSeededLocal) {
         mem.taskConfigs = [...DEFAULT_TASK_CONFIGS];
-        try { localStorage.setItem(KEYS.TASK_CONFIGS, JSON.stringify(DEFAULT_TASK_CONFIGS)); } catch {}
+        try {
+          localStorage.setItem(KEYS.TASK_CONFIGS, JSON.stringify(DEFAULT_TASK_CONFIGS));
+          localStorage.setItem("gs3_seeded", "true");
+        } catch {}
       }
+
       try { mem.snapshots = JSON.parse(localStorage.getItem(KEYS.DAILY_SNAPSHOTS) || "{}"); } catch {}
       try { mem.techLogs = JSON.parse(localStorage.getItem(KEYS.TECH_LOGS) || "[]"); } catch {}
       try { mem.focusSessions = JSON.parse(localStorage.getItem(KEYS.FOCUS_SESSIONS) || "[]"); } catch {}
@@ -445,9 +450,9 @@ export const localDb = {
     } catch (e) {
       console.error("[Grindstack] Firestore init failed, using defaults:", e);
       if (!mem.profile) mem.profile = makeDefaultProfile(auth.currentUser?.displayName);
-      if (!mem.taskConfigs.length) mem.taskConfigs = [...DEFAULT_TASK_CONFIGS];
       if (!mem.achievements.length) mem.achievements = [...DEFAULT_ACHIEVEMENTS];
     }
+
 
     // Recompute profile stats (XP, streak, level) from the actual loaded history
     this.recalculateProfileFromHistory();
@@ -564,8 +569,12 @@ export const localDb = {
     if (isAuth() && u) {
       fsWrite(deleteDoc(doc(db, "users", u, "taskConfigs", taskId)));
     } else if (mem.isGuest) {
-      try { localStorage.setItem(KEYS.TASK_CONFIGS, JSON.stringify(mem.taskConfigs)); } catch {}
+      try {
+        localStorage.setItem(KEYS.TASK_CONFIGS, JSON.stringify(mem.taskConfigs));
+        localStorage.setItem("gs3_seeded", "true");
+      } catch {}
     }
+
 
     // 3. Clean up today's snapshot so stats and checklist update immediately
     const todayStr = getTodayDateString();
