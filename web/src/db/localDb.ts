@@ -366,10 +366,9 @@ export const localDb = {
         getDocs(collection(db, "users", userId, "achievements")),
       ]);
 
-      // Task configs
-      // Read profile first to check seeded flag
+      // Profile initialization
       const profileData = profileSnap.exists() ? profileSnap.data() : null;
-      const isSeeded = profileData?.seeded === true;
+
 
       // Profile initialization
       if (profileSnap.exists()) {
@@ -397,24 +396,22 @@ export const localDb = {
         fsWrite(setDoc(doc(db, "users", userId), { ...mem.profile, seeded: true, lastSyncTime: Date.now() }));
       }
 
-      // Task configs — only seed defaults if brand new user who has never been seeded
+      // Task configs — seed defaults ONLY on first login ever when user profile doc does not exist yet
       if (!tasksSnap.empty) {
         const configs: TaskConfig[] = [];
         tasksSnap.forEach(d => configs.push(d.data() as TaskConfig));
         mem.taskConfigs = configs.sort((a, b) => a.order - b.order);
-      } else if (!isSeeded) {
+      } else if (!profileSnap.exists()) {
         // First-time user seed
         mem.taskConfigs = [...DEFAULT_TASK_CONFIGS];
         for (const cfg of DEFAULT_TASK_CONFIGS) {
           fsWrite(setDoc(doc(db, "users", userId, "taskConfigs", cfg.id), cfg));
         }
-        if (mem.profile) {
-          fsWrite(setDoc(doc(db, "users", userId), { seeded: true }, { merge: true }));
-        }
       } else {
-        // User explicitly deleted all tasks
+        // Existing user who deleted all tasks
         mem.taskConfigs = [];
       }
+
 
       // Daily snapshots
       if (!snapsSnap.empty) {
