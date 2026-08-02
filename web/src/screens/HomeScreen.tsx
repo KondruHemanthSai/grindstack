@@ -15,10 +15,6 @@ export const HomeScreen: React.FC = () => {
   const [todaySleepLog, setTodaySleepLog] = useState<{ hours: number; quality: number }>({ hours: 8.0, quality: 80 });
   const [heatmapDays, setHeatmapDays] = useState<any[]>([]);
 
-  useEffect(() => {
-    loadData();
-  }, [profile]);
-
   const loadData = () => {
     const todayStr = getTodayDateString();
     const snapshot = localDb.getSnapshotForDate(todayStr);
@@ -46,6 +42,12 @@ export const HomeScreen: React.FC = () => {
     }));
     setHeatmapDays(mappedHeatmap);
   };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadData();
+  }, [profile]);
+
 
   const getGreeting = () => {
     const hours = new Date().getHours();

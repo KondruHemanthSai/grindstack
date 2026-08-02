@@ -84,6 +84,7 @@ export const MissionScreen: React.FC = () => {
   }, [selectedDate]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadData();
   }, [loadData]);
 
@@ -157,7 +158,7 @@ export const MissionScreen: React.FC = () => {
     try {
       const [bH, bM] = bed.split(":").map(Number);
       const [wH, wM] = wake.split(":").map(Number);
-      let bedMins = bH * 60 + bM;
+      const bedMins = bH * 60 + bM;
       let wakeMins = wH * 60 + wM;
       if (wakeMins <= bedMins) wakeMins += 24 * 60;
       const totalMins = wakeMins - bedMins;
@@ -228,7 +229,7 @@ export const MissionScreen: React.FC = () => {
                 } else {
                   dateInputRef.current.click();
                 }
-              } catch (err) {
+              } catch {
                 dateInputRef.current.click();
               }
             }

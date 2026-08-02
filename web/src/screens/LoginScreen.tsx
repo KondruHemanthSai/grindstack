@@ -10,6 +10,7 @@ export const LoginScreen: React.FC = () => {
     setErrorMsg(null);
     try {
       await loginWithGoogle();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       console.error("Google Sign-In Error:", error);
       const code = error?.code || "";

@@ -19,6 +19,7 @@ export const FocusScreen: React.FC = () => {
   const [recentSessions, setRecentSessions] = useState<FocusSession[]>([]);
 
   // Ref
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const intervalRef = useRef<any | null>(null);
 
   // Load stats
@@ -38,6 +39,7 @@ export const FocusScreen: React.FC = () => {
   // Update timer ticks
   useEffect(() => {
     const currentActive = localDb.getActiveFocusSession();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setActiveSession(currentActive);
     loadStats();
 

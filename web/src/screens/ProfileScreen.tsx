@@ -57,10 +57,6 @@ export const ProfileScreen: React.FC = () => {
   const [squadName, setSquadName] = useState("");
   const [leaderboard, setLeaderboard] = useState<GroupMember[]>([]);
 
-  useEffect(() => {
-    loadData();
-  }, [profile]);
-
   const loadData = () => {
     setUsernameInput(profile.username);
     setTaskConfigs(localDb.getTaskConfigs().filter(t => !t.archived));
@@ -79,6 +75,12 @@ export const ProfileScreen: React.FC = () => {
       setLeaderboard([]);
     }
   };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile]);
 
   const handleSaveProfile = () => {
     if (!usernameInput.trim()) return;

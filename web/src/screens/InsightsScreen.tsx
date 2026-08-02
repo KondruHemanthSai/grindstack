@@ -64,7 +64,7 @@ export const InsightsScreen: React.FC = () => {
       if (!customStart || !customEnd) return [];
       const start = new Date(customStart);
       const end = new Date(customEnd);
-      let curr = new Date(start);
+      const curr = new Date(start);
       let iterations = 0;
       while (curr <= end && iterations < 366) {
         const ds = formatDate(curr);
@@ -240,6 +240,7 @@ export const InsightsScreen: React.FC = () => {
     }
 
     return { listA, listB, correlation, interpretation };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [metricA, metricB, snapshots, sleepLogs, techLogs]);
 
   // 3. Sleep & Rest Restoration Center

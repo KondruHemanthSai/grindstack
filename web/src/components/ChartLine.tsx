@@ -1,4 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useId } from 'react';
+
+const PADDING = { top: 20, right: 20, bottom: 30, left: 20 };
+const WIDTH = 400;
+
 
 interface ChartLineProps {
   data: number[];
@@ -13,8 +17,7 @@ export const ChartLine: React.FC<ChartLineProps> = ({
   height = 200,
   color = 'var(--color-primary)',
 }) => {
-  const padding = { top: 20, right: 20, bottom: 30, left: 20 };
-  const width = 400;
+  const chartId = useId();
 
   const points = useMemo(() => {
     if (data.length === 0) return [];
@@ -23,23 +26,21 @@ export const ChartLine: React.FC<ChartLineProps> = ({
     const minVal = Math.min(...data);
     const range = maxVal - minVal || 1;
 
-    const chartWidth = width - padding.left - padding.right;
-    const chartHeight = height - padding.top - padding.bottom;
+    const chartWidth = WIDTH - PADDING.left - PADDING.right;
+    const chartHeight = height - PADDING.top - PADDING.bottom;
 
     return data.map((val, i) => ({
-      x: padding.left + (data.length > 1 ? (i / (data.length - 1)) * chartWidth : chartWidth / 2),
-      y: padding.top + chartHeight - ((val - minVal) / range) * chartHeight,
+      x: PADDING.left + (data.length > 1 ? (i / (data.length - 1)) * chartWidth : chartWidth / 2),
+      y: PADDING.top + chartHeight - ((val - minVal) / range) * chartHeight,
       value: val,
     }));
   }, [data, height]);
-
-  if (data.length === 0) return null;
 
   const polylinePoints = points.map((p) => `${p.x},${p.y}`).join(' ');
 
   const areaPath = useMemo(() => {
     if (points.length === 0) return '';
-    const chartBottom = height - padding.bottom;
+    const chartBottom = height - PADDING.bottom;
     let d = `M ${points[0].x},${chartBottom}`;
     points.forEach((p) => {
       d += ` L ${p.x},${p.y}`;
@@ -48,13 +49,16 @@ export const ChartLine: React.FC<ChartLineProps> = ({
     return d;
   }, [points, height]);
 
-  const gradientId = `chart-gradient-${useMemo(() => Math.random().toString(36).slice(2, 9), [])}`;
+  const gradientId = `chart-gradient-${chartId}`;
+
+  if (data.length === 0) return null;
+
 
   return (
     <div className="chart-container">
       <svg
         width="100%"
-        viewBox={`0 0 ${width} ${height}`}
+        viewBox={`0 0 ${WIDTH} ${height}`}
         preserveAspectRatio="xMidYMid meet"
         className="chart-line-svg"
       >
