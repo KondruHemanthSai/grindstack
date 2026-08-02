@@ -507,6 +507,11 @@ export const localDb = {
     };
     configs.push(newTask);
     this.saveTaskConfigs(configs);
+
+    // Refresh today's snapshot to immediately include the new task
+    const todayStr = getTodayDateString();
+    this.getSnapshotForDate(todayStr);
+
     return newTask;
   },
 
@@ -516,6 +521,11 @@ export const localDb = {
     if (idx === -1) return null;
     configs[idx] = { ...configs[idx], ...updates };
     this.saveTaskConfigs(configs);
+
+    // Refresh today's snapshot to recalculate active task count & discipline score
+    const todayStr = getTodayDateString();
+    this.getSnapshotForDate(todayStr);
+
     return configs[idx];
   },
 
@@ -538,7 +548,8 @@ export const localDb = {
       snap.taskCompletions = snap.taskCompletions.filter(tc => tc.taskId !== taskId);
       const active = this.getActiveTaskConfigs();
       snap.tasksTotal = active.length;
-      snap.tasksCompleted = snap.taskCompletions.filter(t => t.isCompleted).length;
+      snap.tasksCompleted = snap.taskCompletions.filter(t => t.isCompleted && active.some(a => a.id === t.taskId)).length;
+      snap.disciplineScore = this.calculateDisciplineScore(snap);
       this.saveSnapshotForDate(todayStr, snap);
     }
   },
@@ -546,7 +557,6 @@ export const localDb = {
   archiveTask(taskId: string) {
     this.deleteTask(taskId);
   },
-
 
   restoreTask(taskId: string) {
     this.updateTask(taskId, { archived: false });
@@ -565,6 +575,10 @@ export const localDb = {
       if (t) t.order = i;
     });
     this.saveTaskConfigs(configs);
+
+    // Refresh today's snapshot
+    const todayStr = getTodayDateString();
+    this.getSnapshotForDate(todayStr);
   },
 
   // ── DAILY SNAPSHOTS ─────────────────────
@@ -574,8 +588,6 @@ export const localDb = {
   },
 
   saveAllSnapshots(snapshots: Record<string, DailySnapshot>) {
-    // Only updates in-memory cache.
-    // Individual saveSnapshotForDate() handles Firestore persistence per document.
     mem.snapshots = { ...snapshots };
     if (mem.isGuest) {
       try { localStorage.setItem(KEYS.DAILY_SNAPSHOTS, JSON.stringify(snapshots)); } catch {}
@@ -600,7 +612,6 @@ export const localDb = {
       };
       this.saveSnapshotForDate(dateString, snap);
     } else {
-      // Sync any new tasks added since this snapshot was created
       let modified = false;
       activeTasks.forEach(task => {
         if (!snap.taskCompletions.some(tc => tc.taskId === task.id)) {
@@ -608,9 +619,15 @@ export const localDb = {
           modified = true;
         }
       });
-      if (modified) {
+      
+      const activeCompleted = snap.taskCompletions.filter(t => t.isCompleted && activeTasks.some(at => at.id === t.taskId)).length;
+      if (snap.tasksTotal !== activeTasks.length || snap.tasksCompleted !== activeCompleted) {
         snap.tasksTotal = activeTasks.length;
-        snap.tasksCompleted = snap.taskCompletions.filter(t => t.isCompleted).length;
+        snap.tasksCompleted = activeCompleted;
+        modified = true;
+      }
+
+      if (modified) {
         this.saveSnapshotForDate(dateString, snap);
       }
     }
@@ -625,18 +642,10 @@ export const localDb = {
     return snap;
   },
 
-  /**
-   * Read-only snapshot lookup. Returns null for dates with no recorded data.
-   * Use this in analytics loops to avoid creating empty Firestore documents.
-   */
   getSnapshotForDateReadOnly(dateString: string): DailySnapshot | null {
     return mem.snapshots[dateString] || null;
   },
 
-  /**
-   * Returns a zero-filled snapshot for a date without saving it anywhere.
-   * Use in InsightsScreen range queries as a fallback for missing dates.
-   */
   createEmptySnapshot(dateString: string): DailySnapshot {
     return {
       dateString,
@@ -686,7 +695,7 @@ export const localDb = {
     }
 
     const activeTasks = this.getActiveTaskConfigs();
-    snapshot.tasksCompleted = snapshot.taskCompletions.filter(t => t.isCompleted).length;
+    snapshot.tasksCompleted = snapshot.taskCompletions.filter(t => t.isCompleted && activeTasks.some(at => at.id === t.taskId)).length;
     snapshot.tasksTotal = activeTasks.length;
 
     let xp = 0;
@@ -705,8 +714,15 @@ export const localDb = {
   },
 
   calculateDisciplineScore(snapshot: DailySnapshot): number {
-    return snapshot.tasksTotal > 0 ? Math.round((snapshot.tasksCompleted / snapshot.tasksTotal) * 100) : 0;
+    const activeTasks = this.getActiveTaskConfigs();
+    if (activeTasks.length === 0) return 0;
+    const completedCount = snapshot.taskCompletions.filter(tc => {
+      if (!tc.isCompleted) return false;
+      return activeTasks.some(at => at.id === tc.taskId);
+    }).length;
+    return Math.round((completedCount / activeTasks.length) * 100);
   },
+
 
   updateHabitsForDate(dateString: string, habits: Partial<DailyHabits>): DailySnapshot {
     const snapshot = this.getSnapshotForDate(dateString);

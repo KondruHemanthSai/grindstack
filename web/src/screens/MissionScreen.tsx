@@ -197,12 +197,16 @@ export const MissionScreen: React.FC = () => {
     discipline: [],
   };
 
-  for (const tc of snapshot.taskCompletions) {
-    const config = activeTasks.find(t => t.id === tc.taskId);
-    if (!config) continue;
+  for (const config of activeTasks) {
+    const tc = snapshot.taskCompletions.find(t => t.taskId === config.id);
     const cat = config.category in groupedTasks ? config.category : "discipline";
-    groupedTasks[cat].push({ config, isCompleted: tc.isCompleted, remarks: tc.remarks });
+    groupedTasks[cat].push({
+      config,
+      isCompleted: tc ? tc.isCompleted : false,
+      remarks: tc?.remarks,
+    });
   }
+
 
   return (
     <div className="screen-content">

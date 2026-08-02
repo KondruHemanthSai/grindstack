@@ -14,8 +14,7 @@ import {
   Eye, 
   EyeOff, 
   Trash,
-  Plus,
-  RefreshCw
+  Plus
 } from "lucide-react";
 
 const AVATARS = [
@@ -27,12 +26,10 @@ const AVATARS = [
 ];
 
 export const ProfileScreen: React.FC = () => {
-  const { user, profile, setProfile, logout } = useAuth();
+  const { user, profile, setProfile, refreshProfile, logout } = useAuth();
   const { showToast } = useToast();
   const [usernameInput, setUsernameInput] = useState(profile.username);
   const [editingName, setEditingName] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [lastSyncTime, setLastSyncTime] = useState<number>(localDb.getLastSyncTime());
 
   // Custom Task Creator state
   const [newTaskName, setNewTaskName] = useState("");
@@ -96,13 +93,14 @@ export const ProfileScreen: React.FC = () => {
   };
 
   // Custom tasks management
-  const handleCreateTask = (e: React.FormEvent) => {
+  const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTaskName.trim()) return;
     localDb.createTask(newTaskName.trim(), newTaskCategory, newTaskDescription.trim(), newTaskXP, newTaskType);
     setTaskConfigs(localDb.getTaskConfigs().filter(t => !t.archived));
     setNewTaskName("");
     setNewTaskDescription("");
+    await refreshProfile();
     showToast("New task configured successfully!", "success");
   };
 
@@ -116,7 +114,7 @@ export const ProfileScreen: React.FC = () => {
     setEditDescription(config.description || "");
   };
 
-  const handleSaveTaskEdit = (id: string) => {
+  const handleSaveTaskEdit = async (id: string) => {
     if (!editName.trim()) return;
     localDb.updateTask(id, {
       name: editName.trim(),
@@ -128,20 +126,25 @@ export const ProfileScreen: React.FC = () => {
     });
     setEditingTaskId(null);
     setTaskConfigs(localDb.getTaskConfigs().filter(t => !t.archived));
+    await refreshProfile();
+    showToast("Task updated!", "success");
   };
 
-  const handleToggleTaskStatus = (id: string, currentEnabled: boolean) => {
+  const handleToggleTaskStatus = async (id: string, currentEnabled: boolean) => {
     localDb.updateTask(id, { enabled: !currentEnabled });
     setTaskConfigs(localDb.getTaskConfigs().filter(t => !t.archived));
+    await refreshProfile();
+    showToast(!currentEnabled ? "Task enabled" : "Task disabled", "info");
   };
 
-  const handleDuplicateTask = (id: string) => {
+  const handleDuplicateTask = async (id: string) => {
     localDb.duplicateTask(id);
     setTaskConfigs(localDb.getTaskConfigs().filter(t => !t.archived));
+    await refreshProfile();
     showToast("Task duplicated!", "success");
   };
 
-  const handleMoveTask = (id: string, direction: "up" | "down") => {
+  const handleMoveTask = async (id: string, direction: "up" | "down") => {
     const activeIds = taskConfigs.map(t => t.id);
     const idx = activeIds.indexOf(id);
     if (idx === -1) return;
@@ -158,15 +161,16 @@ export const ProfileScreen: React.FC = () => {
 
     localDb.reorderTasks(activeIds);
     setTaskConfigs(localDb.getTaskConfigs().filter(t => !t.archived));
+    await refreshProfile();
   };
 
-  const handleDeleteTask = (id: string) => {
+  const handleDeleteTask = async (id: string) => {
     localDb.deleteTask(id);
     setTaskConfigs(localDb.getTaskConfigs().filter(t => !t.archived));
     setDeleteConfirmId(null);
+    await refreshProfile();
     showToast("Task deleted.", "info");
   };
-
 
   // Squad Tribe actions
   const handleJoinSquad = async (e: React.FormEvent) => {
@@ -185,20 +189,6 @@ export const ProfileScreen: React.FC = () => {
     showToast("Squad left.", "info");
   };
 
-  const handleSyncFromCloud = async () => {
-    if (isSyncing) return;
-    setIsSyncing(true);
-    try {
-      const synced = await localDb.resyncFromFirestore();
-      setProfile(synced);
-      setLastSyncTime(localDb.getLastSyncTime());
-      setTaskConfigs(localDb.getTaskConfigs().filter(t => !t.archived));
-      showToast("Data synced from cloud!", "success");
-    } catch {
-      showToast("Sync failed. Check your connection.", "error");
-    }
-    setIsSyncing(false);
-  };
 
   // Calculate XP values
   const currentXP = profile.xp;
@@ -298,29 +288,11 @@ export const ProfileScreen: React.FC = () => {
         </div>
 
         {user && (
-          <div className="flex-column" style={{ gap: "8px" }}>
-            <button
-              className="btn btn-secondary"
-              onClick={handleSyncFromCloud}
-              disabled={isSyncing}
-              style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", opacity: isSyncing ? 0.7 : 1 }}
-            >
-              <RefreshCw size={14} style={{ animation: isSyncing ? "spin 1s linear infinite" : "none" }} />
-              {isSyncing ? "Syncing..." : "Sync from Cloud"}
-            </button>
-            {lastSyncTime > 0 && (
-              <p className="text-xs text-muted" style={{ textAlign: "center" }}>
-                Last synced: {Math.round((Date.now() - lastSyncTime) / 60000) < 1
-                  ? "just now"
-                  : `${Math.round((Date.now() - lastSyncTime) / 60000)}m ago`
-                }
-              </p>
-            )}
-            <button className="btn btn-secondary btn-ghost" onClick={logout} style={{ color: "var(--error-text)", borderColor: "var(--error-border)", width: "100%" }}>
-              Disconnect Account Shell
-            </button>
-          </div>
+          <button className="btn btn-secondary btn-ghost" onClick={logout} style={{ color: "var(--error-text)", borderColor: "var(--error-border)", width: "100%" }}>
+            Disconnect Account Shell
+          </button>
         )}
+
       </GlassCard>
 
       {/* Squad Tribe 2.0 Section */}
