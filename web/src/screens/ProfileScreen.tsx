@@ -3,6 +3,7 @@ import { useAuth } from "../context/AuthContext";
 import { localDb } from "../db/localDb";
 import type { TaskConfig, GroupMember } from "../db/localDb";
 import { GlassCard } from "../components/GlassCard";
+import { useToast } from "../components/Toast";
 import { 
   Edit2, 
   ArrowUp, 
@@ -13,7 +14,8 @@ import {
   Eye, 
   EyeOff, 
   Trash,
-  Plus
+  Plus,
+  RefreshCw
 } from "lucide-react";
 
 const AVATARS = [
@@ -26,8 +28,11 @@ const AVATARS = [
 
 export const ProfileScreen: React.FC = () => {
   const { user, profile, setProfile, logout } = useAuth();
+  const { showToast } = useToast();
   const [usernameInput, setUsernameInput] = useState(profile.username);
   const [editingName, setEditingName] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<number>(localDb.getLastSyncTime());
 
   // Custom Task Creator state
   const [newTaskName, setNewTaskName] = useState("");
@@ -46,7 +51,9 @@ export const ProfileScreen: React.FC = () => {
   const [editStreakEnabled, setEditStreakEnabled] = useState(true);
   const [editDescription, setEditDescription] = useState("");
 
-
+  // Inline confirm states (replaces window.confirm for mobile)
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [leaveSquadConfirm, setLeaveSquadConfirm] = useState(false);
 
   // Squad Tribe state
   const [squadId, setSquadId] = useState("");
@@ -96,7 +103,7 @@ export const ProfileScreen: React.FC = () => {
     setTaskConfigs(localDb.getTaskConfigs().filter(t => !t.archived));
     setNewTaskName("");
     setNewTaskDescription("");
-    alert("New master task configured successfully!");
+    showToast("New task configured successfully!", "success");
   };
 
   const handleEditTask = (config: TaskConfig) => {
@@ -131,7 +138,7 @@ export const ProfileScreen: React.FC = () => {
   const handleDuplicateTask = (id: string) => {
     localDb.duplicateTask(id);
     setTaskConfigs(localDb.getTaskConfigs().filter(t => !t.archived));
-    alert("Task duplicated successfully!");
+    showToast("Task duplicated!", "success");
   };
 
   const handleMoveTask = (id: string, direction: "up" | "down") => {
@@ -154,10 +161,10 @@ export const ProfileScreen: React.FC = () => {
   };
 
   const handleDeleteTask = (id: string) => {
-    if (window.confirm("Archive this task from your checklists?")) {
-      localDb.archiveTask(id);
-      setTaskConfigs(localDb.getTaskConfigs().filter(t => !t.archived));
-    }
+    localDb.archiveTask(id);
+    setTaskConfigs(localDb.getTaskConfigs().filter(t => !t.archived));
+    setDeleteConfirmId(null);
+    showToast("Task archived.", "info");
   };
 
   // Squad Tribe actions
@@ -167,15 +174,29 @@ export const ProfileScreen: React.FC = () => {
     const sName = squadName.trim() || "Elite Alpha Tribe";
     const updated = await localDb.joinSquad(squadId, sName);
     setProfile(updated);
-    alert(`Joined squad "${updated.currentGroupName}" successfully!`);
+    showToast(`Joined "${updated.currentGroupName}" successfully!`, "success");
   };
 
   const handleLeaveSquad = async () => {
-    if (window.confirm("Are you sure you want to leave your squad tribe?")) {
-      const updated = await localDb.leaveSquad();
-      setProfile(updated);
-      alert("Squad left.");
+    const updated = await localDb.leaveSquad();
+    setProfile(updated);
+    setLeaveSquadConfirm(false);
+    showToast("Squad left.", "info");
+  };
+
+  const handleSyncFromCloud = async () => {
+    if (isSyncing) return;
+    setIsSyncing(true);
+    try {
+      const synced = await localDb.resyncFromFirestore();
+      setProfile(synced);
+      setLastSyncTime(localDb.getLastSyncTime());
+      setTaskConfigs(localDb.getTaskConfigs().filter(t => !t.archived));
+      showToast("Data synced from cloud!", "success");
+    } catch {
+      showToast("Sync failed. Check your connection.", "error");
     }
+    setIsSyncing(false);
   };
 
   // Calculate XP values
@@ -276,9 +297,28 @@ export const ProfileScreen: React.FC = () => {
         </div>
 
         {user && (
-          <button className="btn btn-secondary btn-ghost" onClick={logout} style={{ color: "var(--error-text)", borderColor: "var(--error-border)", width: "100%" }}>
-            Disconnect Account Shell
-          </button>
+          <div className="flex-column" style={{ gap: "8px" }}>
+            <button
+              className="btn btn-secondary"
+              onClick={handleSyncFromCloud}
+              disabled={isSyncing}
+              style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", opacity: isSyncing ? 0.7 : 1 }}
+            >
+              <RefreshCw size={14} style={{ animation: isSyncing ? "spin 1s linear infinite" : "none" }} />
+              {isSyncing ? "Syncing..." : "Sync from Cloud"}
+            </button>
+            {lastSyncTime > 0 && (
+              <p className="text-xs text-muted" style={{ textAlign: "center" }}>
+                Last synced: {Math.round((Date.now() - lastSyncTime) / 60000) < 1
+                  ? "just now"
+                  : `${Math.round((Date.now() - lastSyncTime) / 60000)}m ago`
+                }
+              </p>
+            )}
+            <button className="btn btn-secondary btn-ghost" onClick={logout} style={{ color: "var(--error-text)", borderColor: "var(--error-border)", width: "100%" }}>
+              Disconnect Account Shell
+            </button>
+          </div>
         )}
       </GlassCard>
 
@@ -296,7 +336,14 @@ export const ProfileScreen: React.FC = () => {
                 <span className="badge badge-primary">{profile.currentGroupName}</span>
                 <p className="text-xs text-muted" style={{ marginTop: "4px" }}>Squad Invite ID: <code className="text-primary-accent">{profile.currentGroupId}</code></p>
               </div>
-              <button className="btn btn-ghost btn-danger" onClick={handleLeaveSquad} style={{ padding: "6px 12px" }}>Leave Squad</button>
+              {leaveSquadConfirm ? (
+                <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+                  <button className="btn btn-ghost btn-danger" onClick={handleLeaveSquad} style={{ padding: "6px 10px", fontSize: "12px" }}>Yes, Leave</button>
+                  <button className="btn btn-ghost" onClick={() => setLeaveSquadConfirm(false)} style={{ padding: "6px 10px", fontSize: "12px" }}>Cancel</button>
+                </div>
+              ) : (
+                <button className="btn btn-ghost btn-danger" onClick={() => setLeaveSquadConfirm(true)} style={{ padding: "6px 12px" }}>Leave Squad</button>
+              )}
             </div>
 
             {/* Tribe Leaderboard */}
@@ -613,9 +660,20 @@ export const ProfileScreen: React.FC = () => {
                         <button onClick={() => handleMoveTask(config.id, "down")} title="Move Down" className="btn-icon-only" style={{ padding: "4px" }}>
                           <ArrowDown size={12} className="text-muted" />
                         </button>
-                        <button onClick={() => handleDeleteTask(config.id)} title="Archive task" className="btn-icon-only" style={{ padding: "4px" }}>
-                          <Trash size={12} className="text-muted" />
-                        </button>
+                        {deleteConfirmId === config.id ? (
+                          <>
+                            <button onClick={() => handleDeleteTask(config.id)} title="Confirm archive" className="btn-icon-only" style={{ padding: "4px", color: "var(--error-text)" }}>
+                              <Check size={12} />
+                            </button>
+                            <button onClick={() => setDeleteConfirmId(null)} title="Cancel" className="btn-icon-only" style={{ padding: "4px" }}>
+                              <X size={12} className="text-muted" />
+                            </button>
+                          </>
+                        ) : (
+                          <button onClick={() => setDeleteConfirmId(config.id)} title="Archive task" className="btn-icon-only" style={{ padding: "4px" }}>
+                            <Trash size={12} className="text-muted" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>

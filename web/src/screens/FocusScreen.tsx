@@ -4,9 +4,11 @@ import { localDb } from "../db/localDb";
 import type { FocusSession } from "../db/localDb";
 import { GlassCard } from "../components/GlassCard";
 import { MetricCard } from "../components/MetricCard";
+import { useToast } from "../components/Toast";
 
 export const FocusScreen: React.FC = () => {
   const { refreshProfile } = useAuth();
+  const { showToast } = useToast();
   
   // State
   const [activeSession, setActiveSession] = useState<FocusSession | null>(null);
@@ -50,6 +52,21 @@ export const FocusScreen: React.FC = () => {
       intervalRef.current = setInterval(() => {
         setElapsedSeconds(prev => prev + 1);
       }, 1000);
+
+      // Correction interval: re-sync elapsed time from startTime every 10 seconds
+      // This fixes timer drift when the app is backgrounded on mobile
+      const correctionRef = setInterval(() => {
+        const activeNow = localDb.getActiveFocusSession();
+        if (activeNow) {
+          const corrected = Math.max(0, Math.floor((Date.now() - new Date(activeNow.startTime).getTime()) / 1000));
+          setElapsedSeconds(corrected);
+        }
+      }, 10000);
+
+      return () => {
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        clearInterval(correctionRef);
+      };
     }
 
     return () => {
@@ -82,7 +99,7 @@ export const FocusScreen: React.FC = () => {
     setElapsedSeconds(0);
     loadStats();
     await refreshProfile();
-    alert("Focus session complete! XP points synchronized.");
+    showToast("Focus session complete! XP synchronized.", "success");
   };
 
   // Timer format (MM:SS)

@@ -68,7 +68,8 @@ export const InsightsScreen: React.FC = () => {
       let iterations = 0;
       while (curr <= end && iterations < 366) {
         const ds = formatDate(curr);
-        result.push(localDb.getSnapshotForDate(ds));
+        // Read-only: never create empty Firestore docs for missing dates
+        result.push(localDb.getSnapshotForDateReadOnly(ds) ?? localDb.createEmptySnapshot(ds));
         curr.setDate(curr.getDate() + 1);
         iterations++;
       }
@@ -86,7 +87,7 @@ export const InsightsScreen: React.FC = () => {
       const d = new Date(today);
       d.setDate(today.getDate() - i);
       const ds = formatDate(d);
-      result.push(localDb.getSnapshotForDate(ds));
+      result.push(localDb.getSnapshotForDateReadOnly(ds) ?? localDb.createEmptySnapshot(ds));
     }
     return result;
   }, [filter, customStart, customEnd]);
@@ -102,13 +103,13 @@ export const InsightsScreen: React.FC = () => {
     else if (filter === "90d") numDays = 90;
     else if (filter === "6m") numDays = 180;
     else if (filter === "1y") numDays = 365;
-    else return []; // Skip for custom ranges to keep logic fast
+    else return []; // Skip for custom ranges
 
     for (let i = 2 * numDays - 1; i >= numDays; i--) {
       const d = new Date(today);
       d.setDate(today.getDate() - i);
       const ds = formatDate(d);
-      result.push(localDb.getSnapshotForDate(ds));
+      result.push(localDb.getSnapshotForDateReadOnly(ds) ?? localDb.createEmptySnapshot(ds));
     }
     return result;
   }, [filter]);

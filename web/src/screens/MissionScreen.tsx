@@ -204,7 +204,7 @@ export const MissionScreen: React.FC = () => {
   const sleepCalc = calculateSleepDuration(bedtime, waketime);
   const recoveryScore = Math.min(100, Math.round(sleepQuality * 0.7 + sleepCalc.totalHours * 3.5));
 
-  // Get 7-day completion history for a task
+  // Get 7-day completion history for a task (read-only — never creates empty snapshots)
   const getTaskHistory = (taskId: string) => {
     const baseDate = new Date(selectedDate);
     const result: boolean[] = [];
@@ -212,12 +212,13 @@ export const MissionScreen: React.FC = () => {
       const d = new Date(baseDate);
       d.setDate(baseDate.getDate() - i);
       const ds = formatDate(d);
-      const snap = localDb.getSnapshotForDate(ds);
-      const tc = snap.taskCompletions.find(t => t.taskId === taskId);
+      const snap = localDb.getSnapshotForDateReadOnly(ds);
+      const tc = snap?.taskCompletions.find(t => t.taskId === taskId);
       result.push(tc ? tc.isCompleted : false);
     }
     return result;
   };
+
 
   if (!snapshot) return null;
 

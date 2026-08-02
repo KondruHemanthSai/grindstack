@@ -140,8 +140,7 @@ export interface GroupMember {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 export function getTodayDateString(): string {
-  const d = new Date();
-  return formatDate(d);
+  return formatDate(new Date());
 }
 
 export function formatDate(d: Date): string {
@@ -179,7 +178,6 @@ const DEFAULT_TASK_CONFIGS: TaskConfig[] = [
   { id: "tech_webdev", name: "Web Development", description: "Build web projects and code", category: "tech", xpReward: 10, streakEnabled: true, graceDayEligible: true, isCustom: false, archived: false, enabled: true, order: 2, createdAt: getTodayDateString(), taskType: "simple" },
   { id: "tech_projects", name: "Projects", description: "Work on personal coding projects", category: "tech", xpReward: 15, streakEnabled: true, graceDayEligible: true, isCustom: false, archived: false, enabled: true, order: 3, createdAt: getTodayDateString(), taskType: "simple" },
   { id: "tech_reading", name: "Reading", description: "Read technical or learning material", category: "tech", xpReward: 10, streakEnabled: true, graceDayEligible: true, isCustom: false, archived: false, enabled: true, order: 4, createdAt: getTodayDateString(), taskType: "simple" },
-
   // Health & Wellness
   { id: "health_gym", name: "Gym", description: "Complete a full gym or workout session", category: "health", xpReward: 15, streakEnabled: true, graceDayEligible: true, isCustom: false, archived: false, enabled: true, order: 5, createdAt: getTodayDateString(), taskType: "simple" },
   { id: "health_diet", name: "Clean Diet", description: "Eat a nutrition-focused clean diet today", category: "health", xpReward: 10, streakEnabled: true, graceDayEligible: true, isCustom: false, archived: false, enabled: true, order: 6, createdAt: getTodayDateString(), taskType: "simple" },
@@ -187,7 +185,6 @@ const DEFAULT_TASK_CONFIGS: TaskConfig[] = [
   { id: "health_meditation", name: "Meditation", description: "Complete a deep meditation session", category: "health", xpReward: 5, streakEnabled: true, graceDayEligible: false, isCustom: false, archived: false, enabled: true, order: 8, createdAt: getTodayDateString(), taskType: "simple" },
   { id: "health_skincare", name: "Skincare", description: "Perform PM skincare routine", category: "health", xpReward: 5, streakEnabled: true, graceDayEligible: false, isCustom: false, archived: false, enabled: true, order: 9, createdAt: getTodayDateString(), taskType: "simple" },
   { id: "health_sleep", name: "Sleep", description: "Get 7-8 hours of sound sleep", category: "health", xpReward: 10, streakEnabled: true, graceDayEligible: true, isCustom: false, archived: false, enabled: true, order: 10, createdAt: getTodayDateString(), taskType: "simple" },
-
   // Lifestyle & Discipline
   { id: "disc_morning", name: "Morning Routine", description: "Wake up early and complete routine", category: "discipline", xpReward: 10, streakEnabled: true, graceDayEligible: false, isCustom: false, archived: false, enabled: true, order: 11, createdAt: getTodayDateString(), taskType: "simple" },
   { id: "disc_noreels", name: "No Reels", description: "Avoid mindless scroll (Instagram/YouTube)", category: "discipline", xpReward: 10, streakEnabled: true, graceDayEligible: false, isCustom: false, archived: false, enabled: true, order: 12, createdAt: getTodayDateString(), taskType: "simple" },
@@ -220,7 +217,7 @@ const DEFAULT_ACHIEVEMENTS: Achievement[] = [
 ];
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// STORAGE KEYS
+// LEGACY KEYS — guest localStorage fallback only
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 const KEYS = {
@@ -231,40 +228,76 @@ const KEYS = {
   SLEEP_LOGS: "gs3_sleep_logs",
   TECH_LOGS: "gs3_tech_logs",
   ACHIEVEMENTS: "gs3_achievements",
-  XP_LOGS: "gs3_xp_logs",
   LEADERBOARD: "gs3_leaderboard",
-  SETTINGS: "gs3_settings",
-  // Legacy keys for migration
-  LEGACY_PROFILE: "grindstack_profile",
-  LEGACY_TASKS: "grindstack_tasks",
-  LEGACY_HABITS: "grindstack_habits",
-  LEGACY_TECH_LOGS: "grindstack_tech_logs",
 };
 
-// TOP LEVEL FORCE PRODUCTION DATA RESET & VERSION UPGRADE
-// This runs once instantly on file import (before React/AuthContext loads!)
-try {
-  const version = localStorage.getItem("gs3_db_version");
-  if (version !== "4.1") {
-    localStorage.setItem("gs3_db_version", "4.1");
-    localStorage.removeItem("gs3_profile");
-    localStorage.removeItem("gs3_daily_snapshots");
-    localStorage.removeItem("gs3_sleep_logs");
-    localStorage.removeItem("gs3_tech_logs");
-    localStorage.removeItem("gs3_focus_sessions");
-    localStorage.removeItem("gs3_achievements");
-    localStorage.removeItem("gs3_leaderboard");
-    localStorage.removeItem("gs3_settings");
-    localStorage.removeItem("gs3_task_configs");
-    
-    // Legacy keys
-    localStorage.removeItem("grindstack_profile");
-    localStorage.removeItem("grindstack_tasks");
-    localStorage.removeItem("grindstack_habits");
-    localStorage.removeItem("grindstack_tech_logs");
-  }
-} catch (e) {
-  console.error("Failed to run database version upgrade:", e);
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// IN-MEMORY SESSION CACHE
+//
+// This is the PRIMARY data source for all reads.
+// It is populated from Firestore (auth users) or
+// localStorage (guest users) once on login via
+// initializeFromFirestore(). All writes update both
+// this cache AND the backing store atomically.
+// Reads are always synchronous and instant.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+interface MemCache {
+  initialized: boolean;
+  isGuest: boolean;
+  userId: string | null;
+  profile: UserProfile | null;
+  snapshots: Record<string, DailySnapshot>;
+  taskConfigs: TaskConfig[];
+  techLogs: TechLog[];
+  focusSessions: FocusSession[];
+  sleepLogs: SleepLog[];
+  achievements: Achievement[];
+  leaderboard: GroupMember[];
+  lastSyncTime: number;
+}
+
+const mem: MemCache = {
+  initialized: false,
+  isGuest: false,
+  userId: null,
+  profile: null,
+  snapshots: {},
+  taskConfigs: [],
+  techLogs: [],
+  focusSessions: [],
+  sleepLogs: [],
+  achievements: [],
+  leaderboard: [],
+  lastSyncTime: 0,
+};
+
+/** Fire-and-forget Firestore write. Errors are logged but never block the UI. */
+function fsWrite(promise: Promise<any>): void {
+  promise.catch((e: any) => console.error("[Grindstack] Firestore write error:", e));
+}
+
+function uid(): string | null { return mem.userId; }
+function isAuth(): boolean { return !!mem.userId && !mem.isGuest; }
+
+function makeDefaultProfile(displayName?: string | null): UserProfile {
+  return {
+    username: displayName || "Grinder",
+    profilePic: "avatar_1",
+    xp: 20,
+    longestStreak: 0,
+    currentStreak: 0,
+    currentGroupId: null,
+    currentGroupName: null,
+    totalTasksCompletedAllTime: 0,
+    badgeCount: 0,
+    lastResetDateString: getTodayDateString(),
+    routineStreak: 0,
+    graceDaysAllowedThisWeek: 2,
+    graceDaysUsedThisWeek: 0,
+    level: 1,
+    disciplineScore: 0,
+  };
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -272,119 +305,203 @@ try {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 export const localDb = {
-  // ── PROFILE ──────────────────────────────
-  getProfile(): UserProfile {
-    try {
-      const data = localStorage.getItem(KEYS.PROFILE);
-      if (data) {
-        const parsed = JSON.parse(data);
-        if (parsed && typeof parsed === 'object') return parsed;
+
+  // ── INITIALIZATION ────────────────────────────────────────────
+
+  /**
+   * Called once at login. Bulk-fetches ALL user data from Firestore
+   * in parallel (or localStorage for guests) and populates the cache.
+   * All subsequent reads are served from cache — instant, zero network.
+   */
+  async initializeFromFirestore(userId: string): Promise<UserProfile> {
+    // Reset cache for clean init (handles re-login)
+    mem.userId = userId;
+    mem.isGuest = userId === "guest_user";
+    mem.profile = null;
+    mem.snapshots = {};
+    mem.taskConfigs = [];
+    mem.techLogs = [];
+    mem.focusSessions = [];
+    mem.sleepLogs = [];
+    mem.achievements = [];
+    mem.leaderboard = [];
+
+    if (mem.isGuest) {
+      // Guest: load from localStorage into cache
+      try { mem.taskConfigs = JSON.parse(localStorage.getItem(KEYS.TASK_CONFIGS) || "[]"); } catch {}
+      if (!mem.taskConfigs.length) {
+        mem.taskConfigs = [...DEFAULT_TASK_CONFIGS];
+        try { localStorage.setItem(KEYS.TASK_CONFIGS, JSON.stringify(DEFAULT_TASK_CONFIGS)); } catch {}
       }
-    } catch (e) {
-      console.error("Failed to parse profile, resetting to default.", e);
-      try { localStorage.removeItem(KEYS.PROFILE); } catch {}
+      try { mem.snapshots = JSON.parse(localStorage.getItem(KEYS.DAILY_SNAPSHOTS) || "{}"); } catch {}
+      try { mem.techLogs = JSON.parse(localStorage.getItem(KEYS.TECH_LOGS) || "[]"); } catch {}
+      try { mem.focusSessions = JSON.parse(localStorage.getItem(KEYS.FOCUS_SESSIONS) || "[]"); } catch {}
+      try { mem.sleepLogs = JSON.parse(localStorage.getItem(KEYS.SLEEP_LOGS) || "[]"); } catch {}
+      try { mem.achievements = JSON.parse(localStorage.getItem(KEYS.ACHIEVEMENTS) || "[]"); } catch {}
+      if (!mem.achievements.length) mem.achievements = [...DEFAULT_ACHIEVEMENTS];
+      try { mem.leaderboard = JSON.parse(localStorage.getItem(KEYS.LEADERBOARD) || "[]"); } catch {}
+      try {
+        const raw = localStorage.getItem(KEYS.PROFILE);
+        if (raw) mem.profile = JSON.parse(raw);
+      } catch {}
+      if (!mem.profile) {
+        mem.profile = makeDefaultProfile();
+        try { localStorage.setItem(KEYS.PROFILE, JSON.stringify(mem.profile)); } catch {}
+      }
+
+      mem.initialized = true;
+      mem.lastSyncTime = Date.now();
+      return { ...mem.profile };
     }
 
+    // ── Authenticated user: fetch everything from Firestore in parallel ──
     try {
-      // Check legacy migration
-      const legacy = localStorage.getItem(KEYS.LEGACY_PROFILE);
-      if (legacy) {
-        const old = JSON.parse(legacy);
-        const migrated: UserProfile = {
-          username: old.username || "Grinder",
-          profilePic: old.profilePic || "avatar_1",
-          xp: old.xp || 20,
-          longestStreak: old.longestStreak || 0,
-          currentStreak: old.routineStreak || 0,
-          currentGroupId: old.currentGroupId || null,
-          currentGroupName: old.currentGroupName || null,
-          totalTasksCompletedAllTime: old.totalTasksCompletedAllTime || 0,
-          badgeCount: old.badgeCount || 0,
-          lastResetDateString: old.lastResetDateString || getTodayDateString(),
-          routineStreak: old.routineStreak || 0,
-          graceDaysAllowedThisWeek: old.graceDaysAllowedThisWeek || 2,
-          graceDaysUsedThisWeek: old.graceDaysUsedThisWeek || 0,
-          level: Math.floor((old.xp || 20) / 100) + 1,
-          disciplineScore: 0,
+      const [profileSnap, tasksSnap, snapsSnap, sleepSnap, techSnap, focusSnap, achSnap] = await Promise.all([
+        getDoc(doc(db, "users", userId)),
+        getDocs(collection(db, "users", userId, "taskConfigs")),
+        getDocs(collection(db, "users", userId, "snapshots")),
+        getDocs(collection(db, "users", userId, "sleepLogs")),
+        getDocs(collection(db, "users", userId, "techLogs")),
+        getDocs(collection(db, "users", userId, "focusSessions")),
+        getDocs(collection(db, "users", userId, "achievements")),
+      ]);
+
+      // Task configs
+      if (!tasksSnap.empty) {
+        const configs: TaskConfig[] = [];
+        tasksSnap.forEach(d => configs.push(d.data() as TaskConfig));
+        mem.taskConfigs = configs.sort((a, b) => a.order - b.order);
+      } else {
+        // First-time user — seed Firestore with defaults
+        mem.taskConfigs = [...DEFAULT_TASK_CONFIGS];
+        for (const cfg of DEFAULT_TASK_CONFIGS) {
+          fsWrite(setDoc(doc(db, "users", userId, "taskConfigs", cfg.id), cfg));
+        }
+      }
+
+      // Daily snapshots
+      if (!snapsSnap.empty) {
+        snapsSnap.forEach(d => { mem.snapshots[d.id] = d.data() as DailySnapshot; });
+      }
+
+      // Sleep logs
+      if (!sleepSnap.empty) {
+        sleepSnap.forEach(d => mem.sleepLogs.push(d.data() as SleepLog));
+      }
+
+      // Tech logs
+      if (!techSnap.empty) {
+        techSnap.forEach(d => mem.techLogs.push(d.data() as TechLog));
+        mem.techLogs.sort((a, b) => b.dateString.localeCompare(a.dateString));
+      }
+
+      // Focus sessions
+      if (!focusSnap.empty) {
+        focusSnap.forEach(d => mem.focusSessions.push(d.data() as FocusSession));
+      }
+
+      // Achievements
+      if (!achSnap.empty) {
+        achSnap.forEach(d => mem.achievements.push(d.data() as Achievement));
+      } else {
+        mem.achievements = [...DEFAULT_ACHIEVEMENTS];
+      }
+
+      // Profile — handle both old field naming convention (profilePhoto) and new (profilePic)
+      if (profileSnap.exists()) {
+        const d = profileSnap.data();
+        mem.profile = {
+          username: d.username || auth.currentUser?.displayName || "Grinder",
+          profilePic: d.profilePic || d.profilePhoto || "avatar_1",
+          xp: d.xp ?? 20,
+          longestStreak: d.longestStreak ?? 0,
+          currentStreak: d.streak ?? d.currentStreak ?? 0,
+          currentGroupId: d.currentGroupId ?? null,
+          currentGroupName: d.currentGroupName ?? null,
+          totalTasksCompletedAllTime: d.totalTasksCompletedAllTime ?? 0,
+          badgeCount: d.badgeCount ?? 0,
+          lastResetDateString: d.lastResetDateString || getTodayDateString(),
+          routineStreak: d.routineStreak ?? 0,
+          graceDaysAllowedThisWeek: d.graceDaysAllowedThisWeek ?? 2,
+          graceDaysUsedThisWeek: d.graceDaysUsedThisWeek ?? 0,
+          level: d.level ?? 1,
+          disciplineScore: d.disciplineScore ?? 0,
         };
-        this.saveProfile(migrated);
-        return migrated;
+      } else {
+        // Brand-new user
+        mem.profile = makeDefaultProfile(auth.currentUser?.displayName);
+        fsWrite(setDoc(doc(db, "users", userId), { ...mem.profile, lastSyncTime: Date.now() }));
       }
     } catch (e) {
-      console.error("Failed to parse legacy profile", e);
+      console.error("[Grindstack] Firestore init failed, using defaults:", e);
+      if (!mem.profile) mem.profile = makeDefaultProfile(auth.currentUser?.displayName);
+      if (!mem.taskConfigs.length) mem.taskConfigs = [...DEFAULT_TASK_CONFIGS];
+      if (!mem.achievements.length) mem.achievements = [...DEFAULT_ACHIEVEMENTS];
     }
 
-    const newProfile: UserProfile = {
-      username: "Grinder",
-      profilePic: "avatar_1",
-      xp: 20,
-      longestStreak: 0,
-      currentStreak: 0,
-      currentGroupId: null,
-      currentGroupName: null,
-      totalTasksCompletedAllTime: 0,
-      badgeCount: 0,
-      lastResetDateString: getTodayDateString(),
-      routineStreak: 0,
-      graceDaysAllowedThisWeek: 2,
-      graceDaysUsedThisWeek: 0,
-      level: 1,
-      disciplineScore: 0,
-    };
-    this.saveProfile(newProfile);
-    return newProfile;
+    // Recompute profile stats (XP, streak, level) from the actual loaded history
+    this.recalculateProfileFromHistory();
+
+    // Sync squad leaderboard if member of a group
+    if (mem.profile?.currentGroupId) {
+      this.syncSquadMembers(mem.profile.currentGroupId, mem.profile).catch(console.error);
+    }
+
+    mem.initialized = true;
+    mem.lastSyncTime = Date.now();
+    return { ...mem.profile! };
+  },
+
+  /** Re-fetch everything from Firestore — call when syncing after using another device. */
+  async resyncFromFirestore(): Promise<UserProfile> {
+    const userId = uid();
+    if (!userId) return this.getProfile();
+    mem.initialized = false;
+    return this.initializeFromFirestore(userId);
+  },
+
+  getLastSyncTime(): number {
+    return mem.lastSyncTime;
+  },
+
+  // ── PROFILE ──────────────────────────────
+
+  getProfile(): UserProfile {
+    if (mem.profile) return { ...mem.profile };
+    return makeDefaultProfile();
   },
 
   saveProfile(profile: UserProfile) {
     profile.level = Math.floor(profile.xp / 100) + 1;
-    localStorage.setItem(KEYS.PROFILE, JSON.stringify(profile));
+    mem.profile = { ...profile };
+    const u = uid();
+    if (isAuth() && u) {
+      fsWrite(setDoc(doc(db, "users", u), { ...profile, lastSyncTime: Date.now() }, { merge: true }));
+    } else if (mem.isGuest) {
+      try { localStorage.setItem(KEYS.PROFILE, JSON.stringify(profile)); } catch {}
+    }
   },
 
   // ── TASK CONFIGS (CRUD) ─────────────────
+
   getTaskConfigs(): TaskConfig[] {
-    try {
-      const data = localStorage.getItem(KEYS.TASK_CONFIGS);
-      if (data) return JSON.parse(data);
-    } catch (e) {
-      console.error("Failed to parse task configs:", e);
-    }
-
-    try {
-      // Migrate legacy tasks if present
-      const legacy = localStorage.getItem(KEYS.LEGACY_TASKS);
-      if (legacy) {
-        const oldTasks = JSON.parse(legacy);
-        const migrated: TaskConfig[] = oldTasks.map((t: any, i: number) => ({
-          id: t.id,
-          name: t.name,
-          description: "",
-          category: t.category || "discipline",
-          xpReward: 10,
-          streakEnabled: true,
-          graceDayEligible: true,
-          isCustom: t.isCustom || false,
-          archived: false,
-          enabled: true,
-          order: i,
-          createdAt: getTodayDateString(),
-        }));
-        this.saveTaskConfigs(migrated);
-        return migrated;
-      }
-    } catch (e) {
-      console.error("Failed to migrate legacy tasks:", e);
-    }
-
-    this.saveTaskConfigs(DEFAULT_TASK_CONFIGS);
-    return [...DEFAULT_TASK_CONFIGS];
+    return [...mem.taskConfigs];
   },
 
   saveTaskConfigs(configs: TaskConfig[]) {
-    localStorage.setItem(KEYS.TASK_CONFIGS, JSON.stringify(configs));
+    mem.taskConfigs = [...configs];
+    const u = uid();
+    if (isAuth() && u) {
+      for (const cfg of configs) {
+        fsWrite(setDoc(doc(db, "users", u, "taskConfigs", cfg.id), cfg));
+      }
+    } else if (mem.isGuest) {
+      try { localStorage.setItem(KEYS.TASK_CONFIGS, JSON.stringify(configs)); } catch {}
+    }
   },
 
   getActiveTaskConfigs(): TaskConfig[] {
-    return this.getTaskConfigs().filter(t => !t.archived && t.enabled).sort((a, b) => a.order - b.order);
+    return mem.taskConfigs.filter(t => !t.archived && t.enabled).sort((a, b) => a.order - b.order);
   },
 
   createTask(name: string, category: string, description = "", xpReward = 10, taskType: "simple" | "problems" = "simple"): TaskConfig {
@@ -406,7 +523,6 @@ export const localDb = {
     };
     configs.push(newTask);
     this.saveTaskConfigs(configs);
-    this.pushTaskConfigToFirestore(newTask);
     return newTask;
   },
 
@@ -416,14 +532,16 @@ export const localDb = {
     if (idx === -1) return null;
     configs[idx] = { ...configs[idx], ...updates };
     this.saveTaskConfigs(configs);
-    this.pushTaskConfigToFirestore(configs[idx]);
     return configs[idx];
   },
 
   deleteTask(taskId: string) {
     const configs = this.getTaskConfigs().filter(t => t.id !== taskId);
     this.saveTaskConfigs(configs);
-    this.deleteTaskConfigFromFirestore(taskId);
+    const u = uid();
+    if (isAuth() && u) {
+      fsWrite(deleteDoc(doc(db, "users", u, "taskConfigs", taskId)));
+    }
   },
 
   archiveTask(taskId: string) {
@@ -435,8 +553,7 @@ export const localDb = {
   },
 
   duplicateTask(taskId: string): TaskConfig | null {
-    const configs = this.getTaskConfigs();
-    const source = configs.find(t => t.id === taskId);
+    const source = this.getTaskConfigs().find(t => t.id === taskId);
     if (!source) return null;
     return this.createTask(source.name + " (copy)", source.category, source.description, source.xpReward);
   },
@@ -451,39 +568,28 @@ export const localDb = {
   },
 
   // ── DAILY SNAPSHOTS ─────────────────────
+
   getAllSnapshots(): Record<string, DailySnapshot> {
-    try {
-      const data = localStorage.getItem(KEYS.DAILY_SNAPSHOTS);
-      if (data) {
-        const parsed = JSON.parse(data);
-        if (parsed && typeof parsed === 'object') {
-          return parsed;
-        }
-      }
-    } catch (e) {
-      console.error("Failed to parse daily snapshots:", e);
-      try { localStorage.removeItem(KEYS.DAILY_SNAPSHOTS); } catch {}
-    }
-    return {};
+    return { ...mem.snapshots };
   },
 
   saveAllSnapshots(snapshots: Record<string, DailySnapshot>) {
-    localStorage.setItem(KEYS.DAILY_SNAPSHOTS, JSON.stringify(snapshots));
+    // Only updates in-memory cache.
+    // Individual saveSnapshotForDate() handles Firestore persistence per document.
+    mem.snapshots = { ...snapshots };
+    if (mem.isGuest) {
+      try { localStorage.setItem(KEYS.DAILY_SNAPSHOTS, JSON.stringify(snapshots)); } catch {}
+    }
   },
 
   getSnapshotForDate(dateString: string): DailySnapshot {
-    const all = this.getAllSnapshots();
-    let snap = all[dateString];
+    let snap = mem.snapshots[dateString];
     const activeTasks = this.getActiveTaskConfigs();
 
     if (!snap) {
       snap = {
         dateString,
-        taskCompletions: activeTasks.map(t => ({
-          taskId: t.id,
-          isCompleted: false,
-          completedAt: null,
-        })),
+        taskCompletions: activeTasks.map(t => ({ taskId: t.id, isCompleted: false, completedAt: null })),
         habits: { ...DEFAULT_HABITS },
         disciplineScore: 0,
         xpEarned: 0,
@@ -492,45 +598,67 @@ export const localDb = {
         tasksCompleted: 0,
         tasksTotal: activeTasks.length,
       };
-      all[dateString] = snap;
-      this.saveAllSnapshots(all);
+      this.saveSnapshotForDate(dateString, snap);
     } else {
-      // Sync active tasks to ensure any new custom tasks are in the completions array!
+      // Sync any new tasks added since this snapshot was created
       let modified = false;
       activeTasks.forEach(task => {
-        const exists = snap.taskCompletions.some(tc => tc.taskId === task.id);
-        if (!exists) {
-          snap.taskCompletions.push({
-            taskId: task.id,
-            isCompleted: false,
-            completedAt: null
-          });
+        if (!snap.taskCompletions.some(tc => tc.taskId === task.id)) {
+          snap.taskCompletions.push({ taskId: task.id, isCompleted: false, completedAt: null });
           modified = true;
         }
       });
       if (modified) {
         snap.tasksTotal = activeTasks.length;
         snap.tasksCompleted = snap.taskCompletions.filter(t => t.isCompleted).length;
-        all[dateString] = snap;
-        this.saveAllSnapshots(all);
+        this.saveSnapshotForDate(dateString, snap);
       }
     }
-    
-    // Force dynamically recalculate discipline score with latest algorithm
+
+    // Recalculate discipline score if stale
     const newScore = this.calculateDisciplineScore(snap);
     if (snap.disciplineScore !== newScore) {
       snap.disciplineScore = newScore;
-      all[dateString] = snap;
-      this.saveAllSnapshots(all);
+      this.saveSnapshotForDate(dateString, snap);
     }
-    
+
     return snap;
   },
 
+  /**
+   * Read-only snapshot lookup. Returns null for dates with no recorded data.
+   * Use this in analytics loops to avoid creating empty Firestore documents.
+   */
+  getSnapshotForDateReadOnly(dateString: string): DailySnapshot | null {
+    return mem.snapshots[dateString] || null;
+  },
+
+  /**
+   * Returns a zero-filled snapshot for a date without saving it anywhere.
+   * Use in InsightsScreen range queries as a fallback for missing dates.
+   */
+  createEmptySnapshot(dateString: string): DailySnapshot {
+    return {
+      dateString,
+      taskCompletions: [],
+      habits: { ...DEFAULT_HABITS },
+      disciplineScore: 0,
+      xpEarned: 0,
+      focusMinutes: 0,
+      sleepHours: 0,
+      tasksCompleted: 0,
+      tasksTotal: 0,
+    };
+  },
+
   saveSnapshotForDate(dateString: string, snapshot: DailySnapshot) {
-    const all = this.getAllSnapshots();
-    all[dateString] = snapshot;
-    this.saveAllSnapshots(all);
+    mem.snapshots[dateString] = snapshot;
+    const u = uid();
+    if (isAuth() && u) {
+      fsWrite(setDoc(doc(db, "users", u, "snapshots", dateString), snapshot));
+    } else if (mem.isGuest) {
+      try { localStorage.setItem(KEYS.DAILY_SNAPSHOTS, JSON.stringify(mem.snapshots)); } catch {}
+    }
   },
 
   saveSnapshotReflection(dateString: string, mood: string, notes: string) {
@@ -538,7 +666,6 @@ export const localDb = {
     snapshot.mood = mood;
     snapshot.notes = notes;
     this.saveSnapshotForDate(dateString, snapshot);
-    this.pushSnapshotToFirestore(dateString, snapshot);
   },
 
   toggleTaskForDate(taskId: string, dateString: string, isCompleted: boolean, remarks?: string): DailySnapshot {
@@ -547,26 +674,21 @@ export const localDb = {
     if (tc) {
       tc.isCompleted = isCompleted;
       tc.completedAt = isCompleted ? new Date().toISOString() : null;
-      if (isCompleted && remarks !== undefined) {
-        tc.remarks = remarks;
-      } else if (!isCompleted) {
-        delete tc.remarks;
-      }
+      if (isCompleted && remarks !== undefined) tc.remarks = remarks;
+      else if (!isCompleted) delete tc.remarks;
     } else {
       snapshot.taskCompletions.push({
         taskId,
         isCompleted,
         completedAt: isCompleted ? new Date().toISOString() : null,
-        remarks: isCompleted ? remarks : undefined
+        remarks: isCompleted ? remarks : undefined,
       });
     }
 
-    // Recalculate snapshot metrics
     const activeTasks = this.getActiveTaskConfigs();
     snapshot.tasksCompleted = snapshot.taskCompletions.filter(t => t.isCompleted).length;
     snapshot.tasksTotal = activeTasks.length;
 
-    // Calculate XP earned for this snapshot
     let xp = 0;
     for (const comp of snapshot.taskCompletions) {
       if (comp.isCompleted) {
@@ -575,16 +697,10 @@ export const localDb = {
       }
     }
     snapshot.xpEarned = xp;
-
-    // Calculate discipline score (0-100)
     snapshot.disciplineScore = this.calculateDisciplineScore(snapshot);
 
     this.saveSnapshotForDate(dateString, snapshot);
-    this.pushSnapshotToFirestore(dateString, snapshot);
-
-    // Recalculate streaks and update profile
     this.recalculateProfileFromHistory();
-
     return snapshot;
   },
 
@@ -601,6 +717,7 @@ export const localDb = {
   },
 
   // ── STREAK CALCULATION ──────────────────
+
   getTaskStreak(taskId: string): number {
     const today = new Date();
     let streak = 0;
@@ -608,19 +725,11 @@ export const localDb = {
       const d = new Date(today);
       d.setDate(today.getDate() - i);
       const ds = formatDate(d);
-      const all = this.getAllSnapshots();
-      const snap = all[ds];
-      if (!snap) {
-        if (i === 0) continue; // today might not have data yet
-        break;
-      }
+      const snap = mem.snapshots[ds];
+      if (!snap) { if (i === 0) continue; break; }
       const tc = snap.taskCompletions.find(t => t.taskId === taskId);
-      if (tc && tc.isCompleted) {
-        streak++;
-      } else {
-        if (i === 0) continue; // today isn't done yet
-        break;
-      }
+      if (tc && tc.isCompleted) { streak++; }
+      else { if (i === 0) continue; break; }
     }
     return streak;
   },
@@ -628,32 +737,22 @@ export const localDb = {
   getAllTaskStreaks(): Record<string, number> {
     const tasks = this.getActiveTaskConfigs();
     const streaks: Record<string, number> = {};
-    for (const t of tasks) {
-      streaks[t.id] = this.getTaskStreak(t.id);
-    }
+    for (const t of tasks) streaks[t.id] = this.getTaskStreak(t.id);
     return streaks;
   },
 
   recalculateProfileFromHistory() {
     const profile = this.getProfile();
-    const snapshots = this.getAllSnapshots();
+    const snapshots = mem.snapshots;
     const dates = Object.keys(snapshots).sort();
 
-    // Recalculate total XP from all snapshots + focus + tech logs
-    let totalXP = 20; // base XP
-    for (const ds of dates) {
-      totalXP += snapshots[ds].xpEarned;
-    }
-    const focusSessions = this.getFocusSessions();
-    for (const fs of focusSessions) {
-      totalXP += fs.xpEarned;
-    }
-    const techLogs = this.getTechLogs();
-    for (const tl of techLogs) {
-      totalXP += tl.xpEarned;
-    }
+    // Total XP from all sources
+    let totalXP = 20;
+    for (const ds of dates) totalXP += snapshots[ds].xpEarned;
+    for (const fs of mem.focusSessions) totalXP += fs.xpEarned;
+    for (const tl of mem.techLogs) totalXP += tl.xpEarned;
 
-    // Calculate current streak (consecutive days with >50% completion)
+    // Current streak — consecutive days with ≥50% completion
     const today = new Date();
     let currentStreak = 0;
     for (let i = 0; i <= 365; i++) {
@@ -661,26 +760,16 @@ export const localDb = {
       d.setDate(today.getDate() - i);
       const ds = formatDate(d);
       const snap = snapshots[ds];
-      if (!snap) {
-        if (i === 0) continue;
-        break;
-      }
+      if (!snap) { if (i === 0) continue; break; }
       const pct = snap.tasksTotal > 0 ? snap.tasksCompleted / snap.tasksTotal : 0;
-      if (pct >= 0.5) {
-        currentStreak++;
-      } else {
-        if (i === 0) continue;
-        break;
-      }
+      if (pct >= 0.5) currentStreak++;
+      else { if (i === 0) continue; break; }
     }
 
     // Total tasks completed all time
     let totalCompleted = 0;
-    for (const ds of dates) {
-      totalCompleted += snapshots[ds].tasksCompleted;
-    }
+    for (const ds of dates) totalCompleted += snapshots[ds].tasksCompleted;
 
-    // Today's discipline score
     const todaySnap = snapshots[getTodayDateString()];
     const disciplineScore = todaySnap ? todaySnap.disciplineScore : 0;
 
@@ -695,22 +784,17 @@ export const localDb = {
   },
 
   // ── FOCUS SESSIONS ──────────────────────
+
   getFocusSessions(): FocusSession[] {
-    try {
-      const data = localStorage.getItem(KEYS.FOCUS_SESSIONS);
-      if (data) {
-        const parsed = JSON.parse(data);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch (e) {
-      console.error("Failed to parse focus sessions:", e);
-      try { localStorage.removeItem(KEYS.FOCUS_SESSIONS); } catch {}
-    }
-    return [];
+    return [...mem.focusSessions];
   },
 
   saveFocusSessions(sessions: FocusSession[]) {
-    localStorage.setItem(KEYS.FOCUS_SESSIONS, JSON.stringify(sessions));
+    mem.focusSessions = [...sessions];
+    if (mem.isGuest) {
+      try { localStorage.setItem(KEYS.FOCUS_SESSIONS, JSON.stringify(sessions)); } catch {}
+    }
+    // Auth: individual start/end ops write their own Firestore docs
   },
 
   startFocusSession(taskName = "Deep Work"): FocusSession {
@@ -725,16 +809,19 @@ export const localDb = {
       dateString: getTodayDateString(),
       isActive: true,
     };
-    const sessions = this.getFocusSessions();
-    sessions.push(session);
-    this.saveFocusSessions(sessions);
-    this.pushFocusSessionToFirestore(session);
+    mem.focusSessions.push(session);
+    if (mem.isGuest) {
+      try { localStorage.setItem(KEYS.FOCUS_SESSIONS, JSON.stringify(mem.focusSessions)); } catch {}
+    }
+    const u = uid();
+    if (isAuth() && u) {
+      fsWrite(setDoc(doc(db, "users", u, "focusSessions", session.id), session));
+    }
     return session;
   },
 
   endFocusSession(sessionId: string): FocusSession | null {
-    const sessions = this.getFocusSessions();
-    const session = sessions.find(s => s.id === sessionId);
+    const session = mem.focusSessions.find(s => s.id === sessionId);
     if (!session) return null;
 
     session.endTime = new Date().toISOString();
@@ -744,29 +831,34 @@ export const localDb = {
     session.durationMinutes = Math.round((end - start) / 60000);
     session.xpEarned = session.durationMinutes; // 1 XP per minute
 
-    this.saveFocusSessions(sessions);
-    this.pushFocusSessionToFirestore(session);
+    if (mem.isGuest) {
+      try { localStorage.setItem(KEYS.FOCUS_SESSIONS, JSON.stringify(mem.focusSessions)); } catch {}
+    }
+    const u = uid();
+    if (isAuth() && u) {
+      fsWrite(setDoc(doc(db, "users", u, "focusSessions", session.id), session));
+    }
 
     // Update today's snapshot focus minutes
-    const snapshot = this.getSnapshotForDate(getTodayDateString());
-    const todaySessions = sessions.filter(s => s.dateString === getTodayDateString() && !s.isActive);
-    snapshot.focusMinutes = todaySessions.reduce((sum, s) => sum + s.durationMinutes, 0);
-    this.saveSnapshotForDate(getTodayDateString(), snapshot);
-    this.pushSnapshotToFirestore(getTodayDateString(), snapshot);
-
-    // Update profile
+    const todayStr = getTodayDateString();
+    const snapshot = this.getSnapshotForDate(todayStr);
+    snapshot.focusMinutes = mem.focusSessions
+      .filter(s => s.dateString === todayStr && !s.isActive)
+      .reduce((sum, s) => sum + s.durationMinutes, 0);
+    this.saveSnapshotForDate(todayStr, snapshot);
     this.recalculateProfileFromHistory();
-
     return session;
   },
 
   getActiveFocusSession(): FocusSession | null {
-    return this.getFocusSessions().find(s => s.isActive) || null;
+    return mem.focusSessions.find(s => s.isActive) || null;
   },
 
   getTodayFocusMinutes(): number {
-    const sessions = this.getFocusSessions().filter(s => s.dateString === getTodayDateString() && !s.isActive);
-    return sessions.reduce((sum, s) => sum + s.durationMinutes, 0);
+    const today = getTodayDateString();
+    return mem.focusSessions
+      .filter(s => s.dateString === today && !s.isActive)
+      .reduce((sum, s) => sum + s.durationMinutes, 0);
   },
 
   getWeekFocusMinutes(): number {
@@ -776,40 +868,40 @@ export const localDb = {
       const d = new Date(today);
       d.setDate(today.getDate() - i);
       const ds = formatDate(d);
-      const sessions = this.getFocusSessions().filter(s => s.dateString === ds && !s.isActive);
-      total += sessions.reduce((sum, s) => sum + s.durationMinutes, 0);
+      total += mem.focusSessions
+        .filter(s => s.dateString === ds && !s.isActive)
+        .reduce((sum, s) => sum + s.durationMinutes, 0);
     }
     return total;
   },
 
   // ── SLEEP LOGS ──────────────────────────
+
   getSleepLogs(): SleepLog[] {
-    try {
-      const data = localStorage.getItem(KEYS.SLEEP_LOGS);
-      if (data) {
-        const parsed = JSON.parse(data);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch (e) {
-      console.error("Failed to parse sleep logs:", e);
-      try { localStorage.removeItem(KEYS.SLEEP_LOGS); } catch {}
-    }
-    return [];
+    return [...mem.sleepLogs];
   },
 
   saveSleepLogs(logs: SleepLog[]) {
-    localStorage.setItem(KEYS.SLEEP_LOGS, JSON.stringify(logs));
+    mem.sleepLogs = [...logs];
+    if (mem.isGuest) {
+      try { localStorage.setItem(KEYS.SLEEP_LOGS, JSON.stringify(logs)); } catch {}
+    }
   },
 
   saveSleepLog(dateString: string, bedtime: string, wakeTime: string, quality = 80): SleepLog {
     const duration = calculateSleepHours(bedtime, wakeTime);
     const log: SleepLog = { dateString, bedtime, wakeTime, durationHours: duration, quality };
-    const logs = this.getSleepLogs();
-    const idx = logs.findIndex(l => l.dateString === dateString);
-    if (idx >= 0) logs[idx] = log;
-    else logs.push(log);
-    this.saveSleepLogs(logs);
-    this.pushSleepLogToFirestore(log);
+    const idx = mem.sleepLogs.findIndex(l => l.dateString === dateString);
+    if (idx >= 0) mem.sleepLogs[idx] = log;
+    else mem.sleepLogs.push(log);
+
+    if (mem.isGuest) {
+      try { localStorage.setItem(KEYS.SLEEP_LOGS, JSON.stringify(mem.sleepLogs)); } catch {}
+    }
+    const u = uid();
+    if (isAuth() && u) {
+      fsWrite(setDoc(doc(db, "users", u, "sleepLogs", dateString), log));
+    }
 
     // Update snapshot
     const snapshot = this.getSnapshotForDate(dateString);
@@ -819,162 +911,110 @@ export const localDb = {
     snapshot.habits.sleepCompleted = duration >= 7;
     snapshot.disciplineScore = this.calculateDisciplineScore(snapshot);
     this.saveSnapshotForDate(dateString, snapshot);
-    this.pushSnapshotToFirestore(dateString, snapshot);
-
     return log;
   },
 
   getSleepLogForDate(dateString: string): SleepLog | null {
-    return this.getSleepLogs().find(l => l.dateString === dateString) || null;
+    return mem.sleepLogs.find(l => l.dateString === dateString) || null;
   },
 
   // ── TECH / ACADEMY LOGS ─────────────────
-  getTechLogs(): TechLog[] {
-    try {
-      const data = localStorage.getItem(KEYS.TECH_LOGS);
-      if (data) {
-        const parsed = JSON.parse(data);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch (e) {
-      console.error("Failed to parse tech logs:", e);
-      try { localStorage.removeItem(KEYS.TECH_LOGS); } catch {}
-    }
 
-    try {
-      const legacy = localStorage.getItem(KEYS.LEGACY_TECH_LOGS);
-      if (legacy) {
-        const parsed = JSON.parse(legacy);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch (e) {
-      console.error("Failed to parse legacy tech logs:", e);
-    }
-    return [];
+  getTechLogs(): TechLog[] {
+    return [...mem.techLogs];
   },
 
   saveTechLogs(logs: TechLog[]) {
-    localStorage.setItem(KEYS.TECH_LOGS, JSON.stringify(logs));
+    mem.techLogs = [...logs];
+    if (mem.isGuest) {
+      try { localStorage.setItem(KEYS.TECH_LOGS, JSON.stringify(logs)); } catch {}
+    }
   },
 
   addTechLog(topic: string, platform: string, count: number, dateString = getTodayDateString()): TechLog {
     const xpEarned = 15;
-    const newLog: TechLog = {
-      id: generateId(),
-      topic,
-      platform,
-      count,
-      dateString,
-      xpEarned,
-    };
-    const logs = this.getTechLogs();
-    logs.unshift(newLog);
-    this.saveTechLogs(logs);
-    this.pushTechLogToFirestore(newLog);
+    const newLog: TechLog = { id: generateId(), topic, platform, count, dateString, xpEarned };
+    mem.techLogs.unshift(newLog);
 
-    // Increment snapshot XP for the target date
+    if (mem.isGuest) {
+      try { localStorage.setItem(KEYS.TECH_LOGS, JSON.stringify(mem.techLogs)); } catch {}
+    }
+    const u = uid();
+    if (isAuth() && u) {
+      fsWrite(setDoc(doc(db, "users", u, "techLogs", newLog.id), newLog));
+    }
+
+    // Update snapshot XP for the target date
     const snapshot = this.getSnapshotForDate(dateString);
     snapshot.xpEarned = (snapshot.xpEarned || 0) + xpEarned;
     this.saveSnapshotForDate(dateString, snapshot);
-    this.pushSnapshotToFirestore(dateString, snapshot);
-
     this.recalculateProfileFromHistory();
     return newLog;
   },
 
   getTotalProblemsSolved(): number {
-    return this.getTechLogs().reduce((sum, l) => sum + l.count, 0);
+    return mem.techLogs.reduce((sum, l) => sum + l.count, 0);
   },
 
   // ── ACHIEVEMENTS ────────────────────────
+
   getAchievements(): Achievement[] {
-    try {
-      const data = localStorage.getItem(KEYS.ACHIEVEMENTS);
-      if (data) {
-        const parsed = JSON.parse(data);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch (e) {
-      console.error("Failed to parse achievements:", e);
-      try { localStorage.removeItem(KEYS.ACHIEVEMENTS); } catch {}
-    }
-    this.saveAchievements(DEFAULT_ACHIEVEMENTS);
-    return [...DEFAULT_ACHIEVEMENTS];
+    return [...mem.achievements];
   },
 
   saveAchievements(achievements: Achievement[]) {
-    localStorage.setItem(KEYS.ACHIEVEMENTS, JSON.stringify(achievements));
+    mem.achievements = [...achievements];
+    const u = uid();
+    if (isAuth() && u) {
+      for (const ach of achievements) {
+        fsWrite(setDoc(doc(db, "users", u, "achievements", ach.id), ach));
+      }
+    } else if (mem.isGuest) {
+      try { localStorage.setItem(KEYS.ACHIEVEMENTS, JSON.stringify(achievements)); } catch {}
+    }
   },
 
   checkAndUnlockAchievements(): Achievement[] {
     const achievements = this.getAchievements();
     const profile = this.getProfile();
-    const focusSessions = this.getFocusSessions().filter(s => !s.isActive);
+    const focusSessions = mem.focusSessions.filter(s => !s.isActive);
     const totalFocusHours = focusSessions.reduce((sum, s) => sum + s.durationMinutes, 0) / 60;
     const totalProblems = this.getTotalProblemsSolved();
 
     for (const ach of achievements) {
       if (ach.unlocked) continue;
-
       switch (ach.id) {
-        case "ach_iron":
-          ach.current = Math.min(ach.target, profile.totalTasksCompletedAllTime);
-          break;
-        case "ach_focus":
-          ach.current = Math.min(ach.target, Math.round(totalFocusHours));
-          break;
-        case "ach_momentum":
-          ach.current = Math.min(ach.target, profile.currentStreak);
-          break;
-        case "ach_coding":
-          ach.current = Math.min(ach.target, totalProblems);
-          break;
-        case "ach_consistency":
-          ach.current = Math.min(ach.target, profile.longestStreak);
-          break;
+        case "ach_iron": ach.current = Math.min(ach.target, profile.totalTasksCompletedAllTime); break;
+        case "ach_focus": ach.current = Math.min(ach.target, Math.round(totalFocusHours)); break;
+        case "ach_momentum": ach.current = Math.min(ach.target, profile.currentStreak); break;
+        case "ach_coding": ach.current = Math.min(ach.target, totalProblems); break;
+        case "ach_consistency": ach.current = Math.min(ach.target, profile.longestStreak); break;
         case "ach_sleep": {
-          // Count consecutive nights with 7+ hours
-          const sleepLogs = this.getSleepLogs().sort((a, b) => b.dateString.localeCompare(a.dateString));
+          const sleepLogs = [...mem.sleepLogs].sort((a, b) => b.dateString.localeCompare(a.dateString));
           let sleepStreak = 0;
-          for (const log of sleepLogs) {
-            if (log.durationHours >= 7) sleepStreak++;
-            else break;
-          }
+          for (const log of sleepLogs) { if (log.durationHours >= 7) sleepStreak++; else break; }
           ach.current = Math.min(ach.target, sleepStreak);
           break;
         }
-        case "ach_focus_master":
-          ach.current = Math.min(ach.target, focusSessions.length);
-          break;
+        case "ach_focus_master": ach.current = Math.min(ach.target, focusSessions.length); break;
       }
-
-      if (ach.current >= ach.target) {
-        ach.unlocked = true;
-        ach.unlockedAt = new Date().toISOString();
-      }
+      if (ach.current >= ach.target) { ach.unlocked = true; ach.unlockedAt = new Date().toISOString(); }
     }
-
     this.saveAchievements(achievements);
     return achievements;
   },
 
   // ── LEADERBOARD / SQUADS ────────────────
+
   getLeaderboardCache(): GroupMember[] {
-    try {
-      const data = localStorage.getItem(KEYS.LEADERBOARD);
-      if (data) {
-        const parsed = JSON.parse(data);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch (e) {
-      console.error("Failed to parse leaderboard cache:", e);
-      try { localStorage.removeItem(KEYS.LEADERBOARD); } catch {}
-    }
-    return [];
+    return [...mem.leaderboard];
   },
 
   saveLeaderboardCache(members: GroupMember[]) {
-    localStorage.setItem(KEYS.LEADERBOARD, JSON.stringify(members));
+    mem.leaderboard = [...members];
+    if (mem.isGuest) {
+      try { localStorage.setItem(KEYS.LEADERBOARD, JSON.stringify(members)); } catch {}
+    }
   },
 
   generateGuestSquadMembers(profile: UserProfile): GroupMember[] {
@@ -984,8 +1024,7 @@ export const localDb = {
     const completedNames = todaySnap.taskCompletions
       .filter(t => t.isCompleted)
       .map(t => configs.find(c => c.id === t.taskId)?.name || "")
-      .filter(Boolean)
-      .join(",");
+      .filter(Boolean).join(",");
 
     const me: GroupMember = {
       userId: "guest_user",
@@ -1001,55 +1040,16 @@ export const localDb = {
       problemsSolved: this.getTotalProblemsSolved(),
     };
 
-    const aria: GroupMember = {
-      userId: "guest_mock_aria",
-      username: "Aria (Mastermind)",
-      dailyCompletionPercentage: 90.0,
-      currentStreak: 18,
-      totalTasksAllTime: 142,
-      xp: 2450,
-      profilePic: "avatar_5",
-      activeBreakdown: "System Design Practice,Solve 3 LeetCode,Cardio Session",
-      isMe: false,
-      focusHours: 4.2,
-      problemsSolved: 124,
-    };
-
-    const sarah: GroupMember = {
-      userId: "guest_mock_sarah",
-      username: "Sarah (Developer)",
-      dailyCompletionPercentage: 75.0,
-      currentStreak: 7,
-      totalTasksAllTime: 68,
-      xp: 1840,
-      profilePic: "avatar_1",
-      activeBreakdown: "React Refactoring,Read Tech Blog",
-      isMe: false,
-      focusHours: 3.0,
-      problemsSolved: 89,
-    };
-
-    const john: GroupMember = {
-      userId: "guest_mock_john",
-      username: "John (Fighter)",
-      dailyCompletionPercentage: 60.0,
-      currentStreak: 4,
-      totalTasksAllTime: 32,
-      xp: 950,
-      profilePic: "avatar_3",
-      activeBreakdown: "Daily Gym Session,Hydration Protocol",
-      isMe: false,
-      focusHours: 1.5,
-      problemsSolved: 34,
-    };
-
-    return [me, aria, sarah, john];
+    return [me,
+      { userId: "guest_mock_aria", username: "Aria (Grinder)", dailyCompletionPercentage: 92.0, currentStreak: 12, totalTasksAllTime: 142, xp: 3800, profilePic: "avatar_2", activeBreakdown: "LeetCode,Morning Routine,Gym,Skincare", isMe: false, focusHours: 4.5, problemsSolved: 156 },
+      { userId: "guest_mock_sarah", username: "Sarah (Developer)", dailyCompletionPercentage: 75.0, currentStreak: 7, totalTasksAllTime: 68, xp: 1840, profilePic: "avatar_1", activeBreakdown: "React Refactoring,Read Tech Blog", isMe: false, focusHours: 3.0, problemsSolved: 89 },
+      { userId: "guest_mock_john", username: "John (Fighter)", dailyCompletionPercentage: 60.0, currentStreak: 4, totalTasksAllTime: 32, xp: 950, profilePic: "avatar_3", activeBreakdown: "Daily Gym Session,Hydration Protocol", isMe: false, focusHours: 1.5, problemsSolved: 34 },
+    ];
   },
 
   extractSquadId(input: string): string {
     const trimmed = input.trim();
-    const hubRegex = /(hub-[a-z0-9\-]+)/i;
-    const match = trimmed.match(hubRegex);
+    const match = trimmed.match(/(hub-[a-z0-9\-]+)/i);
     if (match) return match[1].toLowerCase().trim();
     if (trimmed.includes("/")) return trimmed.split("/").pop()?.trim() || trimmed;
     return trimmed;
@@ -1062,22 +1062,16 @@ export const localDb = {
       try {
         const snap = await getDoc(doc(db, "squads", cleanGroupId));
         finalGroupName = snap.exists() ? (snap.data().name || "Squad Tribe") : "Squad Tribe";
-      } catch {
-        finalGroupName = "Squad Tribe";
-      }
+      } catch { finalGroupName = "Squad Tribe"; }
     }
     const profile = this.getProfile();
     profile.currentGroupId = cleanGroupId;
     profile.currentGroupName = finalGroupName;
     this.saveProfile(profile);
-    if (auth.currentUser) {
-      if (auth.currentUser.uid !== "guest_user") {
-        await this.pushUserProfileToFirestore(profile);
-        await this.syncSquadMembers(cleanGroupId, profile);
-      } else {
-        const mockMembers = this.generateGuestSquadMembers(profile);
-        this.saveLeaderboardCache(mockMembers);
-      }
+    if (auth.currentUser && auth.currentUser.uid !== "guest_user") {
+      await this.syncSquadMembers(cleanGroupId, profile);
+    } else {
+      this.saveLeaderboardCache(this.generateGuestSquadMembers(profile));
     }
     return profile;
   },
@@ -1091,184 +1085,8 @@ export const localDb = {
     this.saveProfile(profile);
     this.saveLeaderboardCache([]);
     if (user && oldGroupId && user.uid !== "guest_user") {
-      try {
-        await deleteDoc(doc(db, "squads", oldGroupId, "members", user.uid));
-        await this.pushUserProfileToFirestore(profile);
-      } catch (e) {
-        console.error("Firestore leave squad failed", e);
-      }
-    }
-    return profile;
-  },
-
-  async pushTaskConfigToFirestore(config: TaskConfig) {
-    const user = auth.currentUser;
-    if (!user || user.uid === "guest_user") return;
-    try {
-      await setDoc(doc(db, "users", user.uid, "taskConfigs", config.id), config);
-    } catch (e) {
-      console.error("Firestore push task config failed", e);
-    }
-  },
-
-  async deleteTaskConfigFromFirestore(taskId: string) {
-    const user = auth.currentUser;
-    if (!user || user.uid === "guest_user") return;
-    try {
-      await deleteDoc(doc(db, "users", user.uid, "taskConfigs", taskId));
-    } catch (e) {
-      console.error("Firestore delete task config failed", e);
-    }
-  },
-
-  async pushSnapshotToFirestore(dateString: string, snapshot: DailySnapshot) {
-    const user = auth.currentUser;
-    if (!user || user.uid === "guest_user") return;
-    try {
-      await setDoc(doc(db, "users", user.uid, "snapshots", dateString), snapshot);
-    } catch (e) {
-      console.error("Firestore push snapshot failed", e);
-    }
-  },
-
-  async pushSleepLogToFirestore(log: SleepLog) {
-    const user = auth.currentUser;
-    if (!user || user.uid === "guest_user") return;
-    try {
-      await setDoc(doc(db, "users", user.uid, "sleepLogs", log.dateString), log);
-    } catch (e) {
-      console.error("Firestore push sleep log failed", e);
-    }
-  },
-
-  async pushTechLogToFirestore(log: TechLog) {
-    const user = auth.currentUser;
-    if (!user || user.uid === "guest_user") return;
-    try {
-      await setDoc(doc(db, "users", user.uid, "techLogs", log.id), log);
-    } catch (e) {
-      console.error("Firestore push tech log failed", e);
-    }
-  },
-
-  async pushFocusSessionToFirestore(session: FocusSession) {
-    const user = auth.currentUser;
-    if (!user || user.uid === "guest_user") return;
-    try {
-      await setDoc(doc(db, "users", user.uid, "focusSessions", session.id), session);
-    } catch (e) {
-      console.error("Firestore push focus session failed", e);
-    }
-  },
-
-  async syncAllDataFromFirestore() {
-    const user = auth.currentUser;
-    if (!user || user.uid === "guest_user") return;
-    try {
-      // 1. Pull Task Configs
-      const tasksSnap = await getDocs(collection(db, "users", user.uid, "taskConfigs"));
-      if (!tasksSnap.empty) {
-        const configs: TaskConfig[] = [];
-        tasksSnap.forEach(d => configs.push(d.data() as TaskConfig));
-        this.saveTaskConfigs(configs);
-      }
-
-      // 2. Pull Snapshots
-      const snapsSnap = await getDocs(collection(db, "users", user.uid, "snapshots"));
-      if (!snapsSnap.empty) {
-        const snaps: Record<string, DailySnapshot> = {};
-        snapsSnap.forEach(d => {
-          snaps[d.id] = d.data() as DailySnapshot;
-        });
-        this.saveAllSnapshots(snaps);
-      }
-
-      // 3. Pull Sleep Logs
-      const sleepSnap = await getDocs(collection(db, "users", user.uid, "sleepLogs"));
-      if (!sleepSnap.empty) {
-        const logs: SleepLog[] = [];
-        sleepSnap.forEach(d => logs.push(d.data() as SleepLog));
-        this.saveSleepLogs(logs);
-      }
-
-      // 4. Pull Tech Logs
-      const techSnap = await getDocs(collection(db, "users", user.uid, "techLogs"));
-      if (!techSnap.empty) {
-        const logs: TechLog[] = [];
-        techSnap.forEach(d => logs.push(d.data() as TechLog));
-        this.saveTechLogs(logs);
-      }
-
-      // 5. Pull Focus Sessions
-      const focusSnap = await getDocs(collection(db, "users", user.uid, "focusSessions"));
-      if (!focusSnap.empty) {
-        const sessions: FocusSession[] = [];
-        focusSnap.forEach(d => sessions.push(d.data() as FocusSession));
-        this.saveFocusSessions(sessions);
-      }
-    } catch (e) {
-      console.error("Firestore sync all data failed", e);
-    }
-  },
-
-  async pushUserProfileToFirestore(profile: UserProfile) {
-    const user = auth.currentUser;
-    if (!user || user.uid === "guest_user") return;
-    try {
-      await setDoc(doc(db, "users", user.uid), {
-        uid: user.uid,
-        username: profile.username,
-        profilePhoto: profile.profilePic,
-        xp: profile.xp,
-        streak: profile.currentStreak,
-        longestStreak: profile.longestStreak,
-        totalTasksCompletedAllTime: profile.totalTasksCompletedAllTime,
-        currentGroupId: profile.currentGroupId,
-        currentGroupName: profile.currentGroupName,
-      }, { merge: true });
-    } catch (e) {
-      console.error("Firestore user profile push failed", e);
-    }
-  },
-
-  async syncUserProfileFromFirestore(): Promise<UserProfile> {
-    const user = auth.currentUser;
-    const profile = this.getProfile();
-    if (!user || user.uid === "guest_user") return profile;
-
-    // Sync all subcollections first to restore full history and tasks!
-    await this.syncAllDataFromFirestore();
-
-    try {
-      const docRef = doc(db, "users", user.uid);
-      const snap = await getDoc(docRef);
-      if (snap.exists()) {
-        const data = snap.data();
-        const updated: UserProfile = {
-          ...profile,
-          username: data.username || user.displayName || "Grinder",
-          profilePic: data.profilePhoto || "avatar_1",
-          currentGroupId: data.currentGroupId || null,
-          currentGroupName: data.currentGroupName || null,
-          xp: data.xp !== undefined ? data.xp : profile.xp,
-          currentStreak: data.streak !== undefined ? data.streak : profile.currentStreak,
-          longestStreak: data.longestStreak !== undefined ? data.longestStreak : profile.longestStreak,
-          totalTasksCompletedAllTime: data.totalTasksCompletedAllTime !== undefined ? data.totalTasksCompletedAllTime : profile.totalTasksCompletedAllTime,
-        };
-        this.saveProfile(updated);
-        if (updated.currentGroupId) {
-          await this.syncSquadMembers(updated.currentGroupId, updated);
-        }
-        return updated;
-      } else {
-        // Document does not exist in Firestore yet: initialize it for first-time logged-in user!
-        if (user.displayName && profile.username === "Grinder") {
-          profile.username = user.displayName;
-        }
-        await this.pushUserProfileToFirestore(profile);
-      }
-    } catch (e) {
-      console.error("Firestore user profile pull failed", e);
+      try { await deleteDoc(doc(db, "squads", oldGroupId, "members", user.uid)); }
+      catch (e) { console.error("Firestore leave squad failed", e); }
     }
     return profile;
   },
@@ -1277,39 +1095,30 @@ export const localDb = {
     const user = auth.currentUser;
     if (!user || user.uid === "guest_user") {
       const cached = this.getLeaderboardCache();
-      if (cached.length > 0 && cached.some(m => m.isMe && m.userId === "guest_user")) {
+      if (cached.length > 0 && cached.some(m => m.isMe)) {
         const todaySnap = this.getSnapshotForDate(getTodayDateString());
         const pct = todaySnap.tasksTotal > 0 ? (todaySnap.tasksCompleted / todaySnap.tasksTotal) * 100 : 0;
         const configs = this.getActiveTaskConfigs();
         const completedNames = todaySnap.taskCompletions
           .filter(t => t.isCompleted)
           .map(t => configs.find(c => c.id === t.taskId)?.name || "")
-          .filter(Boolean)
-          .join(",");
-
-        const updated = cached.map(m => {
-          if (m.isMe) {
-            return {
-              ...m,
-              username: profile.username,
-              dailyCompletionPercentage: parseFloat(pct.toFixed(1)),
-              currentStreak: profile.currentStreak,
-              totalTasksAllTime: profile.totalTasksCompletedAllTime,
-              xp: profile.xp,
-              profilePic: profile.profilePic,
-              activeBreakdown: completedNames,
-              focusHours: parseFloat((this.getTodayFocusMinutes() / 60).toFixed(1)),
-              problemsSolved: this.getTotalProblemsSolved(),
-            };
-          }
-          return m;
-        });
+          .filter(Boolean).join(",");
+        const updated = cached.map(m => m.isMe ? {
+          ...m, username: profile.username,
+          dailyCompletionPercentage: parseFloat(pct.toFixed(1)),
+          currentStreak: profile.currentStreak,
+          totalTasksAllTime: profile.totalTasksCompletedAllTime,
+          xp: profile.xp, profilePic: profile.profilePic,
+          activeBreakdown: completedNames,
+          focusHours: parseFloat((this.getTodayFocusMinutes() / 60).toFixed(1)),
+          problemsSolved: this.getTotalProblemsSolved(),
+        } : m);
         this.saveLeaderboardCache(updated);
         return updated;
       }
-      const mockMembers = this.generateGuestSquadMembers(profile);
-      this.saveLeaderboardCache(mockMembers);
-      return mockMembers;
+      const mock = this.generateGuestSquadMembers(profile);
+      this.saveLeaderboardCache(mock);
+      return mock;
     }
 
     await this.syncLocalToLeaderboard(profile);
@@ -1324,9 +1133,7 @@ export const localDb = {
         this.saveLeaderboardCache(members);
         return members;
       }
-    } catch (e) {
-      console.error("Firestore sync squad members failed", e);
-    }
+    } catch (e) { console.error("Firestore sync squad members failed", e); }
     return this.getLeaderboardCache();
   },
 
@@ -1339,8 +1146,7 @@ export const localDb = {
     const completedNames = todaySnap.taskCompletions
       .filter(t => t.isCompleted)
       .map(t => configs.find(c => c.id === t.taskId)?.name || "")
-      .filter(Boolean)
-      .join(",");
+      .filter(Boolean).join(",");
 
     const me: GroupMember = {
       userId: user.uid,
@@ -1348,10 +1154,8 @@ export const localDb = {
       dailyCompletionPercentage: parseFloat(pct.toFixed(1)),
       currentStreak: profile.currentStreak,
       totalTasksAllTime: profile.totalTasksCompletedAllTime,
-      xp: profile.xp,
-      profilePic: profile.profilePic,
-      activeBreakdown: completedNames,
-      isMe: true,
+      xp: profile.xp, profilePic: profile.profilePic,
+      activeBreakdown: completedNames, isMe: true,
       focusHours: parseFloat((this.getTodayFocusMinutes() / 60).toFixed(1)),
       problemsSolved: this.getTotalProblemsSolved(),
     };
@@ -1367,65 +1171,51 @@ export const localDb = {
         }
         await setDoc(doc(db, "squads", profile.currentGroupId, "members", user.uid), me);
       }
-    } catch (e) {
-      console.error("Firestore member leaderboard push failed", e);
-    }
+    } catch (e) { console.error("Firestore member leaderboard push failed", e); }
     return me;
   },
 
   // ── PROFILE MANAGEMENT ──────────────────
+
   updateProfileInfo(username: string, profilePic: string): UserProfile {
     const profile = this.getProfile();
     profile.username = username;
     profile.profilePic = profilePic;
     this.saveProfile(profile);
-    if (auth.currentUser) {
-      this.pushUserProfileToFirestore(profile);
-      this.syncLocalToLeaderboard(profile);
-    }
+    if (auth.currentUser) this.syncLocalToLeaderboard(profile);
     return profile;
   },
 
   // ── MIDNIGHT RESET ──────────────────────
+
   async checkAndPerformMidnightReset(): Promise<{ resetDone: boolean; profile: UserProfile }> {
     const profile = this.getProfile();
     const today = getTodayDateString();
 
     if (profile.lastResetDateString !== today) {
-      // Ensure today's snapshot exists
       this.getSnapshotForDate(today);
-
-      // Update profile
       profile.lastResetDateString = today;
       this.recalculateProfileFromHistory();
       const updatedProfile = this.getProfile();
       updatedProfile.lastResetDateString = today;
       this.saveProfile(updatedProfile);
-
-      // Firestore sync
-      if (auth.currentUser) {
-        await this.pushUserProfileToFirestore(updatedProfile);
-        if (updatedProfile.currentGroupId) {
-          await this.syncSquadMembers(updatedProfile.currentGroupId, updatedProfile);
-        }
+      if (auth.currentUser && auth.currentUser.uid !== "guest_user" && updatedProfile.currentGroupId) {
+        await this.syncSquadMembers(updatedProfile.currentGroupId, updatedProfile);
       }
-
       return { resetDone: true, profile: updatedProfile };
     }
-
     return { resetDone: false, profile };
   },
 
   // ── INSIGHTS / ANALYTICS ────────────────
+
   getWeeklySnapshots(): DailySnapshot[] {
     const today = new Date();
     const snapshots: DailySnapshot[] = [];
     for (let i = 6; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
+      const d = new Date(today); d.setDate(today.getDate() - i);
       const ds = formatDate(d);
-      const all = this.getAllSnapshots();
-      if (all[ds]) snapshots.push(all[ds]);
+      if (mem.snapshots[ds]) snapshots.push(mem.snapshots[ds]);
     }
     return snapshots;
   },
@@ -1434,63 +1224,51 @@ export const localDb = {
     const today = new Date();
     const snapshots: DailySnapshot[] = [];
     for (let i = 29; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
+      const d = new Date(today); d.setDate(today.getDate() - i);
       const ds = formatDate(d);
-      const all = this.getAllSnapshots();
-      if (all[ds]) snapshots.push(all[ds]);
+      if (mem.snapshots[ds]) snapshots.push(mem.snapshots[ds]);
     }
     return snapshots;
   },
 
   getAverageDisciplineScore(days = 7): number {
     const today = new Date();
-    const all = this.getAllSnapshots();
-    let total = 0;
-    let count = 0;
+    let total = 0, count = 0;
     for (let i = 0; i < days; i++) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
-      const ds = formatDate(d);
-      if (all[ds]) {
-        total += all[ds].disciplineScore;
-        count++;
-      }
+      const d = new Date(today); d.setDate(today.getDate() - i);
+      const snap = mem.snapshots[formatDate(d)];
+      if (snap) { total += snap.disciplineScore; count++; }
     }
     return count > 0 ? Math.round(total / count) : 0;
   },
 
   getHabitCompletionRate(days = 7): number {
     const today = new Date();
-    const all = this.getAllSnapshots();
-    let totalHabits = 0;
-    let completedHabits = 0;
+    let totalH = 0, completedH = 0;
     for (let i = 0; i < days; i++) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
-      const ds = formatDate(d);
-      if (all[ds]) {
-        const h = all[ds].habits;
-        totalHabits += 4;
-        if (h.gymCompleted) completedHabits++;
-        if (h.dietCompleted) completedHabits++;
-        if (h.skincareCompleted) completedHabits++;
-        if (h.sleepCompleted) completedHabits++;
+      const d = new Date(today); d.setDate(today.getDate() - i);
+      const snap = mem.snapshots[formatDate(d)];
+      if (snap) {
+        const h = snap.habits;
+        totalH += 4;
+        if (h.gymCompleted) completedH++;
+        if (h.dietCompleted) completedH++;
+        if (h.skincareCompleted) completedH++;
+        if (h.sleepCompleted) completedH++;
       }
     }
-    return totalHabits > 0 ? Math.round((completedHabits / totalHabits) * 100) : 0;
+    return totalH > 0 ? Math.round((completedH / totalH) * 100) : 0;
   },
 
   // ── HEATMAP DATA ────────────────────────
+
   getHeatmapDays(numDays = 21): { dateString: string; label: number; isToday: boolean; completionLevel: number }[] {
     const days = [];
     const today = new Date();
-    const all = this.getAllSnapshots();
     for (let i = numDays - 1; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
+      const d = new Date(today); d.setDate(today.getDate() - i);
       const ds = formatDate(d);
-      const snap = all[ds];
+      const snap = mem.snapshots[ds];
       let level = 0;
       if (snap) {
         const pct = snap.tasksTotal > 0 ? snap.tasksCompleted / snap.tasksTotal : 0;
@@ -1505,28 +1283,72 @@ export const localDb = {
   },
 
   // ── SUBJECT PROGRESS (Academy) ──────────
+
   getSubjectProgress(): Record<string, { count: number; target: number; percentage: number }> {
     const TARGETS: Record<string, number> = {
-      "DSA": 100,
-      "Web Development": 100,
-      "AI/ML": 50,
-      "System Design": 50,
-      "Projects": 30,
-      "LeetCode": 200,
+      "DSA": 100, "Web Development": 100, "AI/ML": 50,
+      "System Design": 50, "Projects": 30, "LeetCode": 200,
     };
-    const logs = this.getTechLogs();
     const progress: Record<string, { count: number; target: number; percentage: number }> = {};
     for (const [subj, target] of Object.entries(TARGETS)) {
-      const count = logs.filter(l => l.topic === subj).reduce((sum, l) => sum + l.count, 0);
+      const count = mem.techLogs.filter(l => l.topic === subj).reduce((sum, l) => sum + l.count, 0);
       progress[subj] = { count, target, percentage: Math.min(100, Math.round((count / target) * 100)) };
     }
     return progress;
   },
 
   // ── CLEAR DATA ──────────────────────────
+
   clearAllData() {
-    Object.values(KEYS).forEach(key => localStorage.removeItem(key));
+    // For auth users: only clears the session cache. Data stays in Firestore for next login.
+    // For guests: also clears localStorage.
+    if (mem.isGuest) {
+      Object.values(KEYS).forEach(key => { try { localStorage.removeItem(key); } catch {} });
+    }
+    mem.initialized = false;
+    mem.isGuest = false;
+    mem.userId = null;
+    mem.profile = null;
+    mem.snapshots = {};
+    mem.taskConfigs = [];
+    mem.techLogs = [];
+    mem.focusSessions = [];
+    mem.sleepLogs = [];
+    mem.achievements = [];
+    mem.leaderboard = [];
+    mem.lastSyncTime = 0;
   },
+
+  // ── BACKWARD-COMPAT ALIASES ──────────────
+  // These keep old callers working without changes.
+
+  async syncUserProfileFromFirestore(): Promise<UserProfile> {
+    const u = uid() || auth.currentUser?.uid;
+    if (!u) return this.getProfile();
+    return this.initializeFromFirestore(u);
+  },
+
+  async syncAllDataFromFirestore() {
+    const u = uid() || auth.currentUser?.uid;
+    if (!u || u === "guest_user") return;
+    await this.initializeFromFirestore(u);
+  },
+
+  async pushUserProfileToFirestore(profile: UserProfile) { this.saveProfile(profile); },
+  async pushTaskConfigToFirestore(config: TaskConfig) {
+    const u = uid();
+    if (isAuth() && u) fsWrite(setDoc(doc(db, "users", u, "taskConfigs", config.id), config));
+  },
+  async deleteTaskConfigFromFirestore(taskId: string) {
+    const u = uid();
+    if (isAuth() && u) fsWrite(deleteDoc(doc(db, "users", u, "taskConfigs", taskId)));
+  },
+  async pushSnapshotToFirestore(dateString: string, snapshot: DailySnapshot) {
+    this.saveSnapshotForDate(dateString, snapshot);
+  },
+  async pushSleepLogToFirestore(_log: SleepLog) { /* now handled in saveSleepLog */ },
+  async pushTechLogToFirestore(_log: TechLog) { /* now handled in addTechLog */ },
+  async pushFocusSessionToFirestore(_session: FocusSession) { /* now handled in start/endFocusSession */ },
 
   // ── MOCK DATA FOR DEMO ──────────────────
   prepopulateMockHistory() {

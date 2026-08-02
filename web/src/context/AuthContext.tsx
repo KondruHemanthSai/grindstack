@@ -32,16 +32,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(currentUser);
       setLoading(true);
       if (currentUser) {
-        // Sync profile from Firestore on login with a strict timeout race (2.5 seconds)
-        // to prevent getting stuck in "Initializing protocols..." if Firestore is not yet created
+        // Load ALL user data from Firestore into memory cache.
+        // 15-second timeout for reliable mobile/slow connections.
         try {
           const synced = await Promise.race([
-            localDb.syncUserProfileFromFirestore(),
-            new Promise<UserProfile>((resolve) => 
+            localDb.initializeFromFirestore(currentUser.uid),
+            new Promise<UserProfile>((resolve) =>
               setTimeout(() => {
-                console.warn("Firestore profile sync timed out. Falling back to local cache.");
+                console.warn("[Grindstack] Firestore sync timed out after 15s. Using cached data.");
                 resolve(localDb.getProfile());
-              }, 2500)
+              }, 15000)
             )
           ]);
           setProfile(synced);
@@ -50,7 +50,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setProfile(localDb.getProfile());
         }
       } else {
-        // If not logged in, keep local profile
         setProfile(localDb.getProfile());
       }
       setLoading(false);
@@ -108,11 +107,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const refreshProfile = async () => {
-    // 1. Get the updated local profile instantly (zero network latency!)
+    // Update UI with the current in-memory cache immediately
     const local = localDb.getProfile();
     setProfile(local);
 
-    // 2. Push to Firestore asynchronously in the background (zero blocking!)
+    // Push latest local state to Firestore + leaderboard asynchronously
     if (auth.currentUser && auth.currentUser.uid !== "guest_user") {
       try {
         localDb.pushUserProfileToFirestore(local);
