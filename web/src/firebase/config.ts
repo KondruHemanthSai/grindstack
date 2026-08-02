@@ -5,14 +5,14 @@ import { getDatabase } from "firebase/database";
 import { getAnalytics, isSupported } from "firebase/analytics";
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "dummy-api-key-to-prevent-crash",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyBuuCC2Bt5k9b1lXATRVKTEzhWE6fEM6vY",
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "grindstack-3b4fe.firebaseapp.com",
   databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL || "https://grindstack-3b4fe-default-rtdb.firebaseio.com",
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "grindstack-3b4fe",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "grindstack-3b4fe.appspot.com",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "1234567890",
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:1234567890:web:1234567890",
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "grindstack-3b4fe.firebasestorage.app",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "473992663485",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:473992663485:web:03b6a7ecf9df75269182d4",
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-0Z43GXKKX6"
 };
 
 const isPlaceholder = !import.meta.env.VITE_FIREBASE_API_KEY || 
