@@ -161,11 +161,12 @@ export const ProfileScreen: React.FC = () => {
   };
 
   const handleDeleteTask = (id: string) => {
-    localDb.archiveTask(id);
+    localDb.deleteTask(id);
     setTaskConfigs(localDb.getTaskConfigs().filter(t => !t.archived));
     setDeleteConfirmId(null);
-    showToast("Task archived.", "info");
+    showToast("Task deleted.", "info");
   };
+
 
   // Squad Tribe actions
   const handleJoinSquad = async (e: React.FormEvent) => {

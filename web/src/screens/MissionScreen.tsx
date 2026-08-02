@@ -65,42 +65,10 @@ export const MissionScreen: React.FC = () => {
   };
 
   const loadData = useCallback(() => {
-    // Self-repair check: Ensure default health_sleep is active and in sync
-    const allConfigs = localDb.getTaskConfigs();
-    const sleepTask = allConfigs.find(t => t.id === "health_sleep");
-    let needsSave = false;
-    if (!sleepTask) {
-      const sleepConfig: TaskConfig = {
-        id: "health_sleep",
-        name: "Sleep",
-        description: "Get 7-8 hours of sound sleep",
-        category: "health",
-        xpReward: 10,
-        streakEnabled: true,
-        graceDayEligible: true,
-        isCustom: false,
-        archived: false,
-        enabled: true,
-        order: 10,
-        createdAt: getTodayDateString(),
-        taskType: "simple"
-      };
-      allConfigs.push(sleepConfig);
-      needsSave = true;
-      localDb.pushTaskConfigToFirestore(sleepConfig);
-    } else if (sleepTask.archived || !sleepTask.enabled) {
-      sleepTask.archived = false;
-      sleepTask.enabled = true;
-      needsSave = true;
-      localDb.pushTaskConfigToFirestore(sleepTask);
-    }
-    if (needsSave) {
-      localDb.saveTaskConfigs(allConfigs);
-    }
-
     const snap = localDb.getSnapshotForDate(selectedDate);
     setSnapshot(snap);
     setActiveTasks(localDb.getActiveTaskConfigs());
+
     
     // Load current sleep log if exists
     const sleepLog = localDb.getSleepLogForDate(selectedDate);

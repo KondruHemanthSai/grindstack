@@ -367,49 +367,13 @@ export const localDb = {
       ]);
 
       // Task configs
-      if (!tasksSnap.empty) {
-        const configs: TaskConfig[] = [];
-        tasksSnap.forEach(d => configs.push(d.data() as TaskConfig));
-        mem.taskConfigs = configs.sort((a, b) => a.order - b.order);
-      } else {
-        // First-time user — seed Firestore with defaults
-        mem.taskConfigs = [...DEFAULT_TASK_CONFIGS];
-        for (const cfg of DEFAULT_TASK_CONFIGS) {
-          fsWrite(setDoc(doc(db, "users", userId, "taskConfigs", cfg.id), cfg));
-        }
-      }
+      // Read profile first to check seeded flag
+      const profileData = profileSnap.exists() ? profileSnap.data() : null;
+      const isSeeded = profileData?.seeded === true;
 
-      // Daily snapshots
-      if (!snapsSnap.empty) {
-        snapsSnap.forEach(d => { mem.snapshots[d.id] = d.data() as DailySnapshot; });
-      }
-
-      // Sleep logs
-      if (!sleepSnap.empty) {
-        sleepSnap.forEach(d => mem.sleepLogs.push(d.data() as SleepLog));
-      }
-
-      // Tech logs
-      if (!techSnap.empty) {
-        techSnap.forEach(d => mem.techLogs.push(d.data() as TechLog));
-        mem.techLogs.sort((a, b) => b.dateString.localeCompare(a.dateString));
-      }
-
-      // Focus sessions
-      if (!focusSnap.empty) {
-        focusSnap.forEach(d => mem.focusSessions.push(d.data() as FocusSession));
-      }
-
-      // Achievements
-      if (!achSnap.empty) {
-        achSnap.forEach(d => mem.achievements.push(d.data() as Achievement));
-      } else {
-        mem.achievements = [...DEFAULT_ACHIEVEMENTS];
-      }
-
-      // Profile — handle both old field naming convention (profilePhoto) and new (profilePic)
+      // Profile initialization
       if (profileSnap.exists()) {
-        const d = profileSnap.data();
+        const d = profileData!;
         mem.profile = {
           username: d.username || auth.currentUser?.displayName || "Grinder",
           profilePic: d.profilePic || d.profilePhoto || "avatar_1",
@@ -430,8 +394,28 @@ export const localDb = {
       } else {
         // Brand-new user
         mem.profile = makeDefaultProfile(auth.currentUser?.displayName);
-        fsWrite(setDoc(doc(db, "users", userId), { ...mem.profile, lastSyncTime: Date.now() }));
+        fsWrite(setDoc(doc(db, "users", userId), { ...mem.profile, seeded: true, lastSyncTime: Date.now() }));
       }
+
+      // Task configs — only seed defaults if brand new user who has never been seeded
+      if (!tasksSnap.empty) {
+        const configs: TaskConfig[] = [];
+        tasksSnap.forEach(d => configs.push(d.data() as TaskConfig));
+        mem.taskConfigs = configs.sort((a, b) => a.order - b.order);
+      } else if (!isSeeded) {
+        // First-time user seed
+        mem.taskConfigs = [...DEFAULT_TASK_CONFIGS];
+        for (const cfg of DEFAULT_TASK_CONFIGS) {
+          fsWrite(setDoc(doc(db, "users", userId, "taskConfigs", cfg.id), cfg));
+        }
+        if (mem.profile) {
+          fsWrite(setDoc(doc(db, "users", userId), { seeded: true }, { merge: true }));
+        }
+      } else {
+        // User explicitly deleted all tasks
+        mem.taskConfigs = [];
+      }
+
     } catch (e) {
       console.error("[Grindstack] Firestore init failed, using defaults:", e);
       if (!mem.profile) mem.profile = makeDefaultProfile(auth.currentUser?.displayName);
@@ -536,17 +520,33 @@ export const localDb = {
   },
 
   deleteTask(taskId: string) {
-    const configs = this.getTaskConfigs().filter(t => t.id !== taskId);
-    this.saveTaskConfigs(configs);
+    // 1. Remove from memory cache
+    mem.taskConfigs = mem.taskConfigs.filter(t => t.id !== taskId);
+
+    // 2. Remove from Firestore (auth) or localStorage (guest)
     const u = uid();
     if (isAuth() && u) {
       fsWrite(deleteDoc(doc(db, "users", u, "taskConfigs", taskId)));
+    } else if (mem.isGuest) {
+      try { localStorage.setItem(KEYS.TASK_CONFIGS, JSON.stringify(mem.taskConfigs)); } catch {}
+    }
+
+    // 3. Clean up today's snapshot so stats and checklist update immediately
+    const todayStr = getTodayDateString();
+    const snap = mem.snapshots[todayStr];
+    if (snap) {
+      snap.taskCompletions = snap.taskCompletions.filter(tc => tc.taskId !== taskId);
+      const active = this.getActiveTaskConfigs();
+      snap.tasksTotal = active.length;
+      snap.tasksCompleted = snap.taskCompletions.filter(t => t.isCompleted).length;
+      this.saveSnapshotForDate(todayStr, snap);
     }
   },
 
   archiveTask(taskId: string) {
-    this.updateTask(taskId, { archived: true });
+    this.deleteTask(taskId);
   },
+
 
   restoreTask(taskId: string) {
     this.updateTask(taskId, { archived: false });
