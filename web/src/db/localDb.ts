@@ -656,7 +656,7 @@ export const localDb = {
       };
       this.saveSnapshotForDate(dateString, snap);
     } else {
-      if (!snap.taskCompletions) snap.taskCompletions = [];
+      if (!snap.taskCompletions || !Array.isArray(snap.taskCompletions)) snap.taskCompletions = [];
       let modified = false;
       activeTasks.forEach(task => {
         if (!snap.taskCompletions.some(tc => tc.taskId === task.id)) {
