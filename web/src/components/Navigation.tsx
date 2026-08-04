@@ -1,5 +1,5 @@
 import React from "react";
-import { LayoutDashboard, Target, BarChart3, User, Timer } from "lucide-react";
+import { LayoutDashboard, Target, BarChart3, User } from "lucide-react";
 
 export type ScreenType = "home" | "mission" | "focus" | "insights" | "profile";
 

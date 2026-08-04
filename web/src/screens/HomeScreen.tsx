@@ -4,15 +4,14 @@ import { localDb, getTodayDateString } from "../db/localDb";
 import { GlassCard } from "../components/GlassCard";
 import { CircularProgress } from "../components/CircularProgress";
 import { MomentumCapsules } from "../components/MomentumCapsules";
-import { MetricCard } from "../components/MetricCard";
+
 
 export const HomeScreen: React.FC = () => {
   const { profile } = useAuth();
   const [disciplineScore, setDisciplineScore] = useState(0);
   const [tasksCompleted, setTasksCompleted] = useState(0);
   const [tasksTotal, setTasksTotal] = useState(0);
-  const [todayFocusMinutes, setTodayFocusMinutes] = useState(0);
-  const [todaySleepLog, setTodaySleepLog] = useState<{ hours: number; quality: number }>({ hours: 8.0, quality: 80 });
+
   const [heatmapDays, setHeatmapDays] = useState<any[]>([]);
 
   const loadData = () => {
@@ -23,16 +22,7 @@ export const HomeScreen: React.FC = () => {
     setTasksCompleted(snapshot.tasksCompleted);
     setTasksTotal(snapshot.tasksTotal);
     
-    // Focus Minutes
-    setTodayFocusMinutes(localDb.getTodayFocusMinutes());
 
-    // Sleep details
-    const sleep = localDb.getSleepLogForDate(todayStr);
-    if (sleep) {
-      setTodaySleepLog({ hours: sleep.durationHours, quality: sleep.quality });
-    } else {
-      setTodaySleepLog({ hours: snapshot.sleepHours || 8.0, quality: 80 });
-    }
 
     // Heatmap data - map number labels to string as expected by component
     const rawHeatmap = localDb.getHeatmapDays(21);
@@ -56,15 +46,7 @@ export const HomeScreen: React.FC = () => {
     return "Good evening";
   };
 
-  const formatFocusTime = (mins: number) => {
-    if (mins === 0) return "0m";
-    if (mins >= 60) {
-      const h = Math.floor(mins / 60);
-      const m = mins % 60;
-      return m > 0 ? `${h}h ${m}m` : `${h}h`;
-    }
-    return `${mins}m`;
-  };
+
 
   return (
     <div className="screen-content">
