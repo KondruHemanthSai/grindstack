@@ -523,7 +523,7 @@ export const localDb = {
 
 
   getActiveTaskConfigs(): TaskConfig[] {
-    return mem.taskConfigs.filter(t => !t.archived && t.enabled).sort((a, b) => a.order - b.order);
+    return (mem.taskConfigs || []).filter(t => !t.archived && t.enabled).sort((a, b) => a.order - b.order);
   },
 
   createTask(name: string, category: string, description = "", xpReward = 10, taskType: "simple" | "problems" = "simple"): TaskConfig {
@@ -656,6 +656,7 @@ export const localDb = {
       };
       this.saveSnapshotForDate(dateString, snap);
     } else {
+      if (!snap.taskCompletions) snap.taskCompletions = [];
       let modified = false;
       activeTasks.forEach(task => {
         if (!snap.taskCompletions.some(tc => tc.taskId === task.id)) {
@@ -762,6 +763,7 @@ export const localDb = {
   calculateDisciplineScore(snapshot: DailySnapshot): number {
     const activeTasks = this.getActiveTaskConfigs();
     if (activeTasks.length === 0) return 0;
+    if (!snapshot.taskCompletions) return 0;
     const completedCount = snapshot.taskCompletions.filter(tc => {
       if (!tc.isCompleted) return false;
       return activeTasks.some(at => at.id === tc.taskId);
