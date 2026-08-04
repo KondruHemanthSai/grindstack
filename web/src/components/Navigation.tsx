@@ -17,7 +17,6 @@ interface NavTab {
 const tabs: NavTab[] = [
   { screen: "home",     icon: <LayoutDashboard size={20} />, label: "HOME" },
   { screen: "mission",  icon: <Target size={20} />,          label: "MISSION" },
-  { screen: "focus",    icon: <Timer size={20} />,           label: "FOCUS" },
   { screen: "insights", icon: <BarChart3 size={20} />,       label: "INSIGHTS" },
   { screen: "profile",  icon: <User size={20} />,            label: "PROFILE" },
 ];

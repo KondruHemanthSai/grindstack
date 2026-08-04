@@ -135,23 +135,7 @@ export const HomeScreen: React.FC = () => {
         <MomentumCapsules days={heatmapDays} />
       </GlassCard>
 
-      {/* Quick Metrics Row */}
-      <div className="grid-2">
-        <MetricCard 
-          icon="timer" 
-          label="Flow State" 
-          value={formatFocusTime(todayFocusMinutes)} 
-          trend="Today's Session" 
-          trendPositive={todayFocusMinutes > 0}
-        />
-        <MetricCard 
-          icon="bedtime" 
-          label="Restoration" 
-          value={`${todaySleepLog.hours}h`} 
-          trend={`${todaySleepLog.quality}% Quality`} 
-          trendPositive={todaySleepLog.quality >= 80}
-        />
-      </div>
+
     </div>
   );
 };
